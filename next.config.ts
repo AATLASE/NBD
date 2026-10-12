@@ -8,6 +8,17 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_SUP
 const supabaseCle =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_SUPABASE_PUBLISHABLE_KEY || "";
 
+// Cette valeur part dans le code envoyé à chaque visiteur. Si ce n'est pas une clé publique de
+// Supabase (une clé secrète collée dans la mauvaise variable, par exemple), la construction
+// s'arrête ici plutôt que de la publier.
+if (supabaseCle && !/^(sb_publishable_|eyJ)/.test(supabaseCle)) {
+  throw new Error(
+    "La clé publique de Supabase (NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ou NEXT_SUPABASE_PUBLISHABLE_KEY) n'en est pas une : " +
+      "elle doit commencer par « sb_publishable_ ». La valeur fournie serait publiée dans le navigateur de chaque visiteur. " +
+      "Si c'est une clé secrète, révoque-la et corrige la variable."
+  );
+}
+
 const nextConfig: NextConfig = {
   // La pastille de dev de Next.js se pose sur la barre de navigation basse.
   devIndicators: false,
