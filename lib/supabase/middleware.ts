@@ -6,6 +6,23 @@ import type { Database } from "@/lib/database.types"
 const ROUTES_PUBLIQUES = ["/login", "/auth"]
 
 export async function updateSession(request: NextRequest) {
+  // Sans ces deux valeurs, tout le site échouerait avec une erreur opaque de l'hébergeur.
+  // Elles sont inscrites à la construction : après les avoir ajoutées, il faut redéployer.
+  const adresse = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
+  const probleme = !adresse
+    ? "l'adresse de Supabase n'était pas définie"
+    : !/^https?:\/\/[^\s"']+$/.test(adresse)
+      ? "l'adresse de Supabase n'est pas une adresse valide (elle doit commencer par https://, sans guillemets ni espace)"
+      : !process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        ? "la clé publique de Supabase n'était pas définie"
+        : null
+  if (probleme) {
+    return new NextResponse(
+      `Configuration incomplète : ${probleme} quand cette version a été construite. Vérifie NEXT_PUBLIC_SUPABASE_URL et NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (ou NEXT_SUPABASE_URL et NEXT_SUPABASE_PUBLISHABLE_KEY) dans les variables d'environnement, puis redéploie.`,
+      { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } }
+    )
+  }
+
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient<Database>(
