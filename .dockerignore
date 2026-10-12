@@ -1,0 +1,14 @@
+# Rien de local ni de privé n'entre dans l'image.
+.git
+.next
+node_modules
+.env*
+!.env.example
+*.tsbuildinfo
+next-env.d.ts
+supabase/.temp
+supabase/proprietaire.sql
+Dockerfile
+.dockerignore
+README.md
+SPEC.md

@@ -43,14 +43,19 @@ export async function envoyerLienMagique(
   })
 
   if (error) {
-    return {
-      statut: "erreur",
-      message:
-        error.status === 429
+    // La cause exacte reste dans les journaux du serveur : l'écran n'en donne que l'essentiel.
+    console.error("[connexion]", error.status, error.code, error.message)
+    const message =
+      error.code === "over_email_send_rate_limit"
+        ? "Trop de mails de connexion envoyés pour l'instant. Réessaie dans une heure."
+        : error.status === 429
           ? "Trop de demandes. Réessaie dans une minute."
-          : "Envoi impossible. Vérifie ta connexion et réessaie.",
-      email,
-    }
+          : error.code === "email_address_not_authorized"
+            ? "Cette adresse ne peut pas encore recevoir de mail de connexion."
+            : /error sending/i.test(error.message)
+              ? "Le mail de connexion n'a pas pu partir : le service d'envoi l'a refusé. Réessaie plus tard."
+              : "Envoi impossible. Vérifie ta connexion et réessaie."
+    return { statut: "erreur", message, email }
   }
 
   return {
