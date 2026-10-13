@@ -65,6 +65,12 @@ function lireModifications() {
   )
 }
 
+// Adresse du compte connecté, lue dans la session gardée sur le téléphone (aucun appel réseau).
+async function lireEmail() {
+  const { data } = await db().auth.getSession()
+  return data.session?.user.email ?? null
+}
+
 // Les derniers messages du chat, du plus ancien au plus récent.
 async function lireMessagesChat() {
   const recents = await liste(
@@ -180,6 +186,7 @@ export const useExercices = () => useQuery({ queryKey: ["exercices"], queryFn: l
 export const useModifications = () =>
   useQuery({ queryKey: ["modifications"], queryFn: lireModifications })
 export const useQuotaIa = () => useQuery({ queryKey: ["quota-ia"], queryFn: lireQuotaIa })
+export const useEmail = () => useQuery({ queryKey: ["email"], queryFn: lireEmail })
 export const useMessagesChat = () => useQuery({ queryKey: ["chat"], queryFn: lireMessagesChat })
 export const usePied = () => useQuery({ queryKey: ["pied"], queryFn: lirePied })
 export const useCourse = () => useQuery({ queryKey: ["course"], queryFn: lireCourse })

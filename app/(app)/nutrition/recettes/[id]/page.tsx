@@ -1,14 +1,20 @@
 "use client"
 
-import { useParams } from "next/navigation"
+import { Pencil, Trash2 } from "lucide-react"
+import { useParams, useRouter } from "next/navigation"
+import { useState } from "react"
 import Markdown from "react-markdown"
 
 import { Carte, Retour, Section, Stat, Vide } from "@/components/blocs"
 import { Attente } from "@/components/etats"
+import { EditeurPlat } from "@/components/nutrition/editeur-plat"
 import { EtiquetteTag } from "@/components/nutrition/repas"
+import { Button } from "@/components/ui/button"
+import { useEdition } from "@/lib/edition"
 import { nombre } from "@/lib/format"
 import { LIBELLE_SLOT } from "@/lib/libelles"
-import { useRepas } from "@/lib/queries"
+import { supprimerPlat } from "@/lib/mutations"
+import { useRepas, type Repas } from "@/lib/queries"
 
 type Ingredient = { nom: string; quantite: number | null; unite: string | null }
 
@@ -32,6 +38,9 @@ function lireIngredients(brut: unknown): Ingredient[] {
 export default function DetailRecette() {
   const { id } = useParams<{ id: string }>()
   const repas = useRepas()
+  const router = useRouter()
+  const { executer, enCours } = useEdition()
+  const [edition, setEdition] = useState(false)
 
   if (!repas.data) return <Attente requetes={[repas]} />
 
@@ -47,6 +56,14 @@ export default function DetailRecette() {
 
   const ingredients = lireIngredients(plat.ingredients)
 
+  async function supprimer() {
+    const resultat = await executer(() => supprimerPlat(plat!.id), {
+      cle: ["repas"],
+      maj: (liste: Repas[]) => liste.filter((r) => r.id !== plat!.id),
+    })
+    if (resultat.ok) router.push("/nutrition/recettes")
+  }
+
   return (
     <>
       <div className="space-y-3">
@@ -60,9 +77,16 @@ export default function DetailRecette() {
         </header>
       </div>
 
+      <Button variant="outline" className="h-12 w-full gap-2 text-base font-semibold" onClick={() => setEdition(true)}>
+        <Pencil className="size-4" aria-hidden="true" />
+        Modifier le plat
+      </Button>
+
       <div className="grid grid-cols-2 gap-3">
         <Stat libelle="Énergie" valeur={plat.kcal} unite="kcal" />
         <Stat libelle="Protéines" valeur={plat.proteines_g} unite="g" />
+        {plat.lipides_g !== null && <Stat libelle="Lipides" valeur={plat.lipides_g} unite="g" />}
+        {plat.glucides_g !== null && <Stat libelle="Glucides" valeur={plat.glucides_g} unite="g" />}
         {plat.temps_min !== null && <Stat libelle="Préparation" valeur={plat.temps_min} unite="min" />}
       </div>
 
@@ -103,10 +127,17 @@ export default function DetailRecette() {
           </Carte>
         ) : (
           <Vide titre="Pas de recette détaillée">
-            Ce plat suit la formule de son repas, sans étapes écrites.
+            Ce plat n&apos;a pas d&apos;étapes écrites. Tu peux en ajouter avec « Modifier le plat ».
           </Vide>
         )}
       </Section>
+
+      <Button variant="destructive" className="h-12 w-full gap-2 text-base" disabled={enCours} onClick={supprimer}>
+        <Trash2 className="size-5" aria-hidden="true" />
+        Supprimer ce plat
+      </Button>
+
+      <EditeurPlat plat={plat} ouvert={edition} onFermer={() => setEdition(false)} />
     </>
   )
 }

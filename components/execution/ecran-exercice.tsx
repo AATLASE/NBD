@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "cn"
-import { Check, History, TrendingUp } from "lucide-react"
+import { Check, History, Pencil, TrendingUp } from "lucide-react"
 import { useState } from "react"
 
 import { Carte } from "@/components/blocs"
@@ -32,6 +32,7 @@ export function EcranExercice({
   derniereEtape,
   onSuivant,
   onHistorique,
+  onModifier,
 }: {
   ligne: ExerciceDeSeance
   historique: SeanceFaite[]
@@ -39,6 +40,7 @@ export function EcranExercice({
   derniereEtape: boolean
   onSuivant: () => void
   onHistorique: () => void
+  onModifier: () => void
 }) {
   // Série rouverte pour correction, série ajoutée au-delà du nombre prévu, charge proposée acceptée.
   const [edition, setEdition] = useState<number | null>(null)
@@ -89,10 +91,16 @@ export function EcranExercice({
           </p>
         </div>
         {ligne.note && <p className="text-sm leading-snug text-muted-foreground">{ligne.note}</p>}
-        <Button variant="outline" className="h-11 gap-2 px-4 text-base" onClick={onHistorique}>
-          <History className="size-5" aria-hidden="true" />
-          Historique
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="h-11 gap-2 px-4 text-base" onClick={onHistorique}>
+            <History className="size-5" aria-hidden="true" />
+            Historique
+          </Button>
+          <Button variant="outline" className="h-11 gap-2 px-4 text-base" onClick={onModifier}>
+            <Pencil className="size-4" aria-hidden="true" />
+            Modifier
+          </Button>
+        </div>
       </header>
 
       {suggestion && (

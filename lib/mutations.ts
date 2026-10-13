@@ -1,12 +1,26 @@
 "use server"
 
-import { validerReponses } from "@/lib/accueil"
+import { ALIMENTS_EXCLUS_MAX, BORNES, validerReponses } from "@/lib/accueil"
 import { calculerCibles } from "@/lib/cibles"
 import { LIGNES_MAX_DU_CHAT, TABLES_DU_CHAT, type DonneesMessage } from "@/lib/chat/types"
 import { cleDe, composerListe, type IngredientDePlat } from "@/lib/courses"
 import type { Json } from "@/lib/database.types"
 import { dateCourte, duree, nombre } from "@/lib/format"
-import { EQUIPEMENTS, GROUPES, JOURS, LIBELLE_SLOT, LIEUX } from "@/lib/libelles"
+import {
+  EQUIPEMENTS,
+  GROUPES,
+  JOURS,
+  LIBELLE_SLOT,
+  LIEUX,
+  LIEUX_ENTRAINEMENT,
+  NIVEAUX,
+  OBJECTIFS,
+  OBJECTIFS_MAX,
+  REGIMES,
+  SEXES,
+  SLOTS,
+  TAGS,
+} from "@/lib/libelles"
 import { lireContexte } from "@/lib/proposition/contexte"
 import { nettoyerNutrition, nettoyerSport, repartirSurDeuxSemaines } from "@/lib/proposition/garde-fous"
 import { PropositionNutritionSchema, PropositionSportSchema } from "@/lib/proposition/schemas"
@@ -255,6 +269,77 @@ const REGLES_EXERCICE: Record<string, Regle> = {
 }
 
 export type NouvelExercice = { nom: string; groupe: string; equipement: string }
+export type SourceExercice = { exerciseId: string } | NouvelExercice
+
+// Un exercice déjà connu, ou un nouveau à créer dans la même opération.
+async function trouverOuCreerExercice(
+  supabase: Client,
+  source: SourceExercice
+): Promise<{ exerciseId: string; nom: string; creation: Changement[] } | ResultatEdition> {
+  if ("exerciseId" in source) {
+    if (!UUID.test(source.exerciseId)) return INVALIDE
+    const { data: exercice } = await supabase
+      .from("exercises")
+      .select("nom")
+      .eq("id", source.exerciseId)
+      .maybeSingle()
+    if (!exercice) return INTROUVABLE
+    return { exerciseId: source.exerciseId, nom: exercice.nom, creation: [] }
+  }
+  const propre = nettoyer(source, REGLES_EXERCICE)
+  if (!propre || Object.keys(propre).length !== 3) return INVALIDE
+  const exerciseId = crypto.randomUUID()
+  return {
+    exerciseId,
+    nom: propre.nom as string,
+    creation: [{ table: "exercises", operation: "insert", id: exerciseId, data: propre }],
+  }
+}
+
+// Remplace l'exercice d'une ligne par un autre, à la même place. Séries, répétitions et repos sont
+// repris ; les charges repartent de zéro, elles n'ont pas de sens d'un mouvement à l'autre.
+// L'ancienne ligne est archivée, pas réécrite : ses séries passées restent attachées au bon exercice.
+export async function remplacerExercice(ligneId: string, source: SourceExercice): Promise<ResultatEdition> {
+  if (!UUID.test(ligneId)) return INVALIDE
+  const supabase = await createClient()
+  const { data: ligne } = await supabase
+    .from("workout_exercises")
+    .select("*, exercise:exercises(nom), workout:workouts(code)")
+    .eq("id", ligneId)
+    .maybeSingle()
+  if (!ligne || ligne.archived) return INTROUVABLE
+
+  const exercice = await trouverOuCreerExercice(supabase, source)
+  if ("ok" in exercice) return exercice
+  if (exercice.exerciseId === ligne.exercise_id) return SANS_EFFET
+
+  const nouvelleLigne = crypto.randomUUID()
+  return appliquer(
+    supabase,
+    [
+      ...exercice.creation,
+      { table: "workout_exercises", operation: "update", id: ligne.id, data: { archived: true } },
+      {
+        table: "workout_exercises",
+        operation: "insert",
+        id: nouvelleLigne,
+        data: {
+          workout_id: ligne.workout_id,
+          exercise_id: exercice.exerciseId,
+          ordre: ligne.ordre,
+          bloc: ligne.bloc,
+          series: ligne.series,
+          reps_min: ligne.reps_min,
+          reps_max: ligne.reps_max,
+          duree_sec: ligne.duree_sec,
+          repos_sec: ligne.repos_sec,
+        },
+      },
+    ],
+    `${ligne.exercise.nom} remplacé par ${exercice.nom} dans la séance ${ligne.workout.code}`,
+    nouvelleLigne
+  )
+}
 
 export async function ajouterExercice(
   workoutId: string,
@@ -270,27 +355,10 @@ export async function ajouterExercice(
     .maybeSingle()
   if (!seance) return INTROUVABLE
 
-  const changements: Changement[] = []
-  let exerciseId: string
-  let nom: string
-
-  if ("exerciseId" in source) {
-    if (!UUID.test(source.exerciseId)) return INVALIDE
-    const { data: exercice } = await supabase
-      .from("exercises")
-      .select("nom")
-      .eq("id", source.exerciseId)
-      .maybeSingle()
-    if (!exercice) return INTROUVABLE
-    exerciseId = source.exerciseId
-    nom = exercice.nom
-  } else {
-    const propre = nettoyer(source, REGLES_EXERCICE)
-    if (!propre || Object.keys(propre).length !== 3) return INVALIDE
-    exerciseId = crypto.randomUUID()
-    nom = propre.nom as string
-    changements.push({ table: "exercises", operation: "insert", id: exerciseId, data: propre })
-  }
+  const exercice = await trouverOuCreerExercice(supabase, source)
+  if ("ok" in exercice) return exercice
+  const { exerciseId, nom } = exercice
+  const changements: Changement[] = [...exercice.creation]
 
   // Après le dernier, lignes retirées comprises : un exercice rétabli garde ainsi sa place.
   const ordre = Math.max(0, ...seance.workout_exercises.map((l) => l.ordre)) + 1
@@ -1153,6 +1221,204 @@ export async function enregistrerSeance(seance: SeanceAEnregistrer): Promise<Res
     }
   }
   return { ok: true, changeLogId: data }
+}
+
+// --- Paramètres : profil et objectifs ---------------------------------------------------------
+
+const listeDe =
+  (valeurs: readonly string[], min: number, max: number): Regle =>
+  (v) =>
+    Array.isArray(v) &&
+    v.length >= min &&
+    v.length <= max &&
+    new Set(v).size === v.length &&
+    v.every((element) => typeof element === "string" && valeurs.includes(element))
+
+const REGLES_PROFIL: Record<string, Regle> = {
+  poids_initial_kg: decimal(BORNES.poids[0], BORNES.poids[1]),
+  taille_cm: entier(BORNES.taille[0], BORNES.taille[1]),
+  age: entier(BORNES.age[0], BORNES.age[1]),
+  sexe: parmi(SEXES),
+  objectifs: listeDe(OBJECTIFS, 1, OBJECTIFS_MAX),
+  zone_blessure: ouNul(texte(1, 100)),
+  contrainte_medicale: ouNul(texte(1, 200)),
+  lieux_entrainement: listeDe(LIEUX_ENTRAINEMENT, 1, LIEUX_ENTRAINEMENT.length),
+  seances_par_semaine: entier(BORNES.seances[0], BORNES.seances[1]),
+  niveau: parmi(NIVEAUX),
+  regime: parmi(REGIMES),
+  aliments_exclus: (v) =>
+    Array.isArray(v) &&
+    v.length <= ALIMENTS_EXCLUS_MAX &&
+    v.every((a) => typeof a === "string" && a.trim().length >= 2 && a.length <= 40),
+  objectif_kcal: entier(800, 6000),
+  objectif_proteines_g: entier(20, 400),
+  objectif_lipides_g: entier(10, 300),
+  objectif_glucides_g: entier(0, 900),
+}
+
+export type ChampsProfil = Partial<{
+  poids_initial_kg: number
+  taille_cm: number
+  age: number
+  sexe: string
+  objectifs: string[]
+  zone_blessure: string | null
+  contrainte_medicale: string | null
+  lieux_entrainement: string[]
+  seances_par_semaine: number
+  niveau: string
+  regime: string
+  aliments_exclus: string[]
+  objectif_kcal: number
+  objectif_proteines_g: number
+  objectif_lipides_g: number
+  objectif_glucides_g: number
+}>
+
+// Ce que l'historique dit d'un changement de profil, par groupe de champs.
+const SUJETS_PROFIL: [string, string[]][] = [
+  ["objectifs nutritionnels", ["objectif_kcal", "objectif_proteines_g", "objectif_lipides_g", "objectif_glucides_g"]],
+  ["mensurations", ["poids_initial_kg", "taille_cm", "age", "sexe"]],
+  ["objectifs", ["objectifs", "zone_blessure", "contrainte_medicale"]],
+  ["entraînement", ["lieux_entrainement", "seances_par_semaine", "niveau"]],
+  ["alimentation", ["regime", "aliments_exclus"]],
+]
+
+const identiques = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+
+export async function modifierProfil(champs: ChampsProfil): Promise<ResultatEdition> {
+  const propres = nettoyer(champs, REGLES_PROFIL)
+  if (!propres) return INVALIDE
+  if (Array.isArray(propres.aliments_exclus)) {
+    propres.aliments_exclus = [...new Set((propres.aliments_exclus as string[]).map((a) => a.trim().toLowerCase()))]
+  }
+
+  const supabase = await createClient()
+  const { data: profil } = await supabase.from("profiles").select("*").maybeSingle()
+  if (!profil) return { ok: false, message: "Session expirée. Reconnecte-toi." }
+
+  const actuel = profil as unknown as Record<string, unknown>
+  const modifies = Object.fromEntries(Object.entries(propres).filter(([cle, valeur]) => !identiques(actuel[cle], valeur)))
+  const cles = Object.keys(modifies)
+  if (cles.length === 0) return SANS_EFFET
+
+  const sujets = SUJETS_PROFIL.filter(([, champsDuSujet]) => champsDuSujet.some((c) => cles.includes(c))).map(([nom]) => nom)
+  const resume =
+    cles.length === 1 && cles[0] === "objectif_kcal"
+      ? `Objectif : ${nombre(modifies.objectif_kcal as number)} kcal par jour`
+      : `Profil modifié : ${sujets.join(", ")}`
+  return appliquer(supabase, [{ table: "profiles", operation: "update", id: profil.id, data: modifies }], resume)
+}
+
+// --- Nutrition : plats et recettes -------------------------------------------------------------
+
+const INGREDIENTS_MAX = 30
+
+function ingredientsValides(v: unknown) {
+  return (
+    Array.isArray(v) &&
+    v.length <= INGREDIENTS_MAX &&
+    v.every((i) => {
+      if (typeof i !== "object" || i === null) return false
+      const { nom, quantite, unite, ...reste } = i as Record<string, unknown>
+      return (
+        Object.keys(reste).length === 0 &&
+        typeof nom === "string" &&
+        nom.trim().length >= 1 &&
+        nom.length <= 80 &&
+        (quantite === null || (typeof quantite === "number" && Number.isFinite(quantite) && quantite >= 0 && quantite <= 100000)) &&
+        (unite === null || (typeof unite === "string" && unite.length <= 20))
+      )
+    })
+  )
+}
+
+const REGLES_PLAT: Record<string, Regle> = {
+  nom: texte(2, 90),
+  slot: parmi(SLOTS),
+  kcal: entier(0, 3000),
+  proteines_g: entier(0, 300),
+  lipides_g: ouNul(entier(0, 300)),
+  glucides_g: ouNul(entier(0, 500)),
+  temps_min: ouNul(entier(0, 600)),
+  tag: parmi(TAGS),
+  recette_md: ouNul(texte(1, 4000)),
+  ingredients: ingredientsValides,
+}
+const CHAMPS_OBLIGATOIRES_PLAT = ["nom", "slot", "kcal", "proteines_g"]
+
+export type IngredientDuPlat = { nom: string; quantite: number | null; unite: string | null }
+export type ChampsPlat = Partial<{
+  nom: string
+  slot: string
+  kcal: number
+  proteines_g: number
+  lipides_g: number | null
+  glucides_g: number | null
+  temps_min: number | null
+  tag: string
+  recette_md: string | null
+  ingredients: IngredientDuPlat[]
+}>
+
+// Crée un plat (`id` vide) ou modifie un plat existant.
+export async function enregistrerPlat(id: string | null, champs: ChampsPlat): Promise<ResultatEdition> {
+  const propres = nettoyer(champs, REGLES_PLAT)
+  if (!propres) return INVALIDE
+  if (Array.isArray(propres.ingredients)) {
+    propres.ingredients = (propres.ingredients as IngredientDuPlat[]).map((i) => ({
+      nom: i.nom.trim(),
+      quantite: i.quantite,
+      unite: i.unite?.trim() || null,
+    }))
+  }
+  const supabase = await createClient()
+
+  if (id === null) {
+    if (!CHAMPS_OBLIGATOIRES_PLAT.every((champ) => champ in propres)) return INVALIDE
+    const nouveau = crypto.randomUUID()
+    return appliquer(
+      supabase,
+      [{ table: "meals", operation: "insert", id: nouveau, data: { tag: "standard", ...propres } }],
+      `Plat créé : ${propres.nom as string}`,
+      nouveau
+    )
+  }
+
+  if (!UUID.test(id)) return INVALIDE
+  const { data: plat } = await supabase.from("meals").select("*").eq("id", id).maybeSingle()
+  if (!plat || plat.archived) return INTROUVABLE
+  const actuel = plat as unknown as Record<string, unknown>
+  const modifies = Object.fromEntries(Object.entries(propres).filter(([cle, valeur]) => !identiques(actuel[cle], valeur)))
+  if (Object.keys(modifies).length === 0) return SANS_EFFET
+  return appliquer(
+    supabase,
+    [{ table: "meals", operation: "update", id, data: modifies }],
+    `Plat modifié : ${(modifies.nom as string | undefined) ?? plat.nom}`
+  )
+}
+
+// Un plat supprimé est archivé (les repas déjà enregistrés gardent leur nom) et quitte les menus.
+export async function supprimerPlat(id: string): Promise<ResultatEdition> {
+  if (!UUID.test(id)) return INVALIDE
+  const supabase = await createClient()
+  const [{ data: plat }, { data: cases }] = await Promise.all([
+    supabase.from("meals").select("nom, archived").eq("id", id).maybeSingle(),
+    supabase.from("meal_plan").select("id").eq("meal_id", id),
+  ])
+  if (!plat || plat.archived) return INTROUVABLE
+
+  const libres = cases ?? []
+  return appliquer(
+    supabase,
+    [
+      ...libres.map((c): Changement => ({ table: "meal_plan", operation: "update", id: c.id, data: { meal_id: null } })),
+      { table: "meals", operation: "update", id, data: { archived: true } },
+    ],
+    libres.length > 0
+      ? `Plat supprimé : ${plat.nom} (retiré de ${libres.length} repas des menus)`
+      : `Plat supprimé : ${plat.nom}`
+  )
 }
 
 // --- Chat : réponse à une proposition de l'assistant ----------------------------------------

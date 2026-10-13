@@ -10,8 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useEdition } from "@/lib/edition"
 import { EQUIPEMENTS, GROUPES, LIBELLE_EQUIPEMENT, LIBELLE_GROUPE } from "@/lib/libelles"
-import { ajouterExercice, type NouvelExercice } from "@/lib/mutations"
-import { useExercices } from "@/lib/queries"
+import { ajouterExercice, remplacerExercice, type SourceExercice } from "@/lib/mutations"
+import { useExercices, type ExerciceDeSeance } from "@/lib/queries"
 
 const sansAccent = (texte: string) =>
   texte
@@ -20,14 +20,17 @@ const sansAccent = (texte: string) =>
     .toLowerCase()
 
 // Ajoute un exercice à la séance : un exercice déjà connu, ou un nouveau créé sur place.
+// Avec `remplace`, l'exercice choisi prend la place de cette ligne au lieu de s'ajouter à la fin.
 // `onAjoute` reçoit l'identifiant de la ligne créée, pour l'ouvrir aussitôt en réglage.
 export function AjoutExercice({
   seanceId,
+  remplace,
   ouvert,
   onFermer,
   onAjoute,
 }: {
   seanceId: string
+  remplace?: ExerciceDeSeance
   ouvert: boolean
   onFermer: () => void
   onAjoute: (ligneId: string) => void
@@ -38,7 +41,7 @@ export function AjoutExercice({
         side="bottom"
         className="mx-auto h-[92dvh] max-w-lg gap-0 overflow-y-auto rounded-t-3xl text-base"
       >
-        {ouvert && <Contenu seanceId={seanceId} onFermer={onFermer} onAjoute={onAjoute} />}
+        {ouvert && <Contenu seanceId={seanceId} remplace={remplace} onFermer={onFermer} onAjoute={onAjoute} />}
       </SheetContent>
     </Sheet>
   )
@@ -46,10 +49,12 @@ export function AjoutExercice({
 
 function Contenu({
   seanceId,
+  remplace,
   onFermer,
   onAjoute,
 }: {
   seanceId: string
+  remplace?: ExerciceDeSeance
   onFermer: () => void
   onAjoute: (ligneId: string) => void
 }) {
@@ -60,12 +65,17 @@ function Contenu({
   const [equipement, setEquipement] = useState<string>(EQUIPEMENTS[0])
 
   const terme = sansAccent(recherche.trim())
-  const trouves = (exercices.data ?? []).filter((e) => sansAccent(e.nom).includes(terme))
+  // On ne propose pas de remplacer un exercice par lui-même.
+  const trouves = (exercices.data ?? []).filter(
+    (e) => sansAccent(e.nom).includes(terme) && e.id !== remplace?.exercise_id
+  )
   const existeDeja = trouves.some((e) => sansAccent(e.nom) === terme)
   const peutCreer = recherche.trim().length >= 2 && !existeDeja
 
-  async function ajouter(source: { exerciseId: string } | NouvelExercice) {
-    const resultat = await executer(() => ajouterExercice(seanceId, source))
+  async function ajouter(source: SourceExercice) {
+    const resultat = await executer(() =>
+      remplace ? remplacerExercice(remplace.id, source) : ajouterExercice(seanceId, source)
+    )
     if (resultat.ok) {
       onFermer()
       if (resultat.id) onAjoute(resultat.id)
@@ -75,9 +85,13 @@ function Contenu({
   return (
     <>
       <SheetHeader className="pr-14">
-        <SheetTitle className="text-xl font-bold">Ajouter un exercice</SheetTitle>
+        <SheetTitle className="text-xl font-bold">
+          {remplace ? `Remplacer ${remplace.exercise.nom}` : "Ajouter un exercice"}
+        </SheetTitle>
         <SheetDescription className="text-base">
-          Choisis dans ta liste, ou tape un nom pour en créer un.
+          {remplace
+            ? "Le nouvel exercice prend sa place et reprend ses séries et son repos. Choisis dans ta liste, ou tape un nom pour en créer un."
+            : "Choisis dans ta liste, ou tape un nom pour en créer un."}
         </SheetDescription>
       </SheetHeader>
 
@@ -122,7 +136,7 @@ function Contenu({
               onClick={() => ajouter({ nom: recherche.trim(), groupe, equipement })}
             >
               <Plus className="size-5" aria-hidden="true" />
-              Créer et ajouter
+              {remplace ? "Créer et remplacer" : "Créer et ajouter"}
             </Button>
           </div>
         )}

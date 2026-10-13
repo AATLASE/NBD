@@ -3,14 +3,14 @@
 import { Check, ChevronRight, Play } from "lucide-react"
 import Link from "next/link"
 
-import { seDeconnecter } from "@/app/login/actions"
 import { Carte, EnTete, Etiquette, Lettre, Section } from "@/components/blocs"
 import { Attente } from "@/components/etats"
+import { Reperes } from "@/components/reperes"
 import { BoutonDemarrer } from "@/components/sport/bouton-demarrer"
 import { ProtocolePied, itemsDuJour } from "@/components/sport/protocole-pied"
 import { SaisieDouleur } from "@/components/sport/saisie-douleur"
 import { resumeSeance } from "@/components/sport/seance"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { useAujourdhui } from "@/lib/aujourdhui"
 import { useEdition } from "@/lib/edition"
 import { differable } from "@/lib/file-attente"
@@ -70,6 +70,8 @@ export default function SportAujourdhui() {
         titre={majuscule(dateLongue(aujourdhui))}
         sousTitre={`Semaine ${semaine} du programme`}
       />
+
+      <Reperes aujourdhui={aujourdhui} />
 
       {brouillon && seanceEnCours && (
         <Link
@@ -213,11 +215,6 @@ export default function SportAujourdhui() {
       </Section>
       )}
 
-      <form action={seDeconnecter} className="pt-4">
-        <Button type="submit" variant="ghost" className="h-11 w-full text-base text-muted-foreground">
-          Se déconnecter
-        </Button>
-      </form>
     </>
   )
 }

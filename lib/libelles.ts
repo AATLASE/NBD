@@ -149,6 +149,8 @@ export const LIBELLE_LIEU: Record<string, string> = {
   exterieur: "Extérieur",
 }
 
+export const TAGS = ["standard", "batch", "plaisir", "secours"] as const
+
 export const LIBELLE_TAG: Record<string, string> = {
   standard: "Standard",
   batch: "Batch",

@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "cn"
-import { Check, Pause, Play, SkipForward } from "lucide-react"
+import { Check, Pause, Pencil, Play, SkipForward } from "lucide-react"
 import { useEffect } from "react"
 
 import { Carte, Etiquette } from "@/components/blocs"
@@ -80,6 +80,7 @@ export function EcranCircuit({
   etat,
   derniereEtape,
   onSuivant,
+  onModifier,
 }: {
   cle: string
   lignes: ExerciceDeSeance[]
@@ -87,6 +88,7 @@ export function EcranCircuit({
   etat: EtatCircuit | undefined
   derniereEtape: boolean
   onSuivant: () => void
+  onModifier: () => void
 }) {
   const reference = lignes[0]!
   const tours = reference.series
@@ -161,6 +163,11 @@ export function EcranCircuit({
         <header className="space-y-3">
           <h2 className="text-[1.75rem] leading-tight font-bold tracking-tight">Circuit</h2>
           {reglages}
+          {/* Tant que le circuit n'est pas lancé : ensuite, changer ses exercices casserait le décompte. */}
+          <Button variant="outline" className="h-11 gap-2 px-4 text-base" onClick={onModifier}>
+            <Pencil className="size-4" aria-hidden="true" />
+            Modifier
+          </Button>
         </header>
         <Carte>
           <ol className="divide-y">

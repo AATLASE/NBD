@@ -25,6 +25,7 @@ const ECRANS = [
   "/nutrition/suivi",
   "/historique",
   "/chat",
+  "/parametres",
 ]
 
 // Socle hors ligne (SPEC, phase 8), présent sur tous les écrans :

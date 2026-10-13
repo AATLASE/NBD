@@ -12,6 +12,7 @@ import { BarreRepos } from "@/components/execution/barre-repos"
 import { EcranCircuit } from "@/components/execution/ecran-circuit"
 import { EcranExercice } from "@/components/execution/ecran-exercice"
 import { Historique } from "@/components/execution/historique"
+import { ModificationEnCours } from "@/components/execution/modification-en-cours"
 import { Resume } from "@/components/execution/resume"
 import { resumeSeance } from "@/components/sport/seance"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -150,6 +151,7 @@ function Execution({
   const defilement = useRef<HTMLDivElement>(null)
   const [exerciceHistorique, setExerciceHistorique] = useState<{ id: string; nom: string } | null>(null)
   const [sortie, setSortie] = useState(false)
+  const [modification, setModification] = useState(false)
 
   // À l'ouverture (ou après un rechargement), on se place sur la première étape non terminée.
   const [page, setPage] = useState(() => {
@@ -177,7 +179,8 @@ function Execution({
     if (abandonner) ecrireBrouillon(null)
   }
 
-  const surResume = page === etapes.length
+  const surResume = page >= etapes.length
+  const etapeAffichee = etapes[page]
   const seriesFaites = nombreDeSeries(brouillon)
 
   return (
@@ -275,9 +278,18 @@ function Execution({
                 etat={brouillon.circuits[etape.cle]}
                 derniereEtape={index === etapes.length - 1}
                 onSuivant={() => allerA(index + 1)}
+                onModifier={() => setModification(true)}
               />
             ) : (
               <EcranExercice
+                // Réglé en pleine séance, l'exercice repart de ses nouvelles valeurs (charge, répétitions).
+                key={[
+                  etape.ligne.series,
+                  etape.ligne.reps_min,
+                  etape.ligne.reps_max,
+                  etape.ligne.duree_sec,
+                  etape.ligne.charge_depart_kg,
+                ].join("/")}
                 ligne={etape.ligne}
                 historique={historique}
                 faites={brouillon.series[etape.ligne.id] ?? []}
@@ -286,6 +298,7 @@ function Execution({
                 onHistorique={() =>
                   setExerciceHistorique({ id: etape.ligne.exercise.id, nom: etape.ligne.exercise.nom })
                 }
+                onModifier={() => setModification(true)}
               />
             )}
           </section>
@@ -309,6 +322,14 @@ function Execution({
         exercice={exerciceHistorique}
         historique={historique}
         onFermer={() => setExerciceHistorique(null)}
+      />
+
+      <ModificationEnCours
+        seance={seance}
+        lignes={etapeAffichee ? (etapeAffichee.type === "circuit" ? etapeAffichee.lignes : [etapeAffichee.ligne]) : []}
+        brouillon={brouillon}
+        ouvert={modification}
+        onFermer={() => setModification(false)}
       />
 
       <Sheet open={sortie} onOpenChange={setSortie}>

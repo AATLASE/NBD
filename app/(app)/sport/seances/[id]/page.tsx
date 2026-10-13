@@ -38,6 +38,7 @@ export default function DetailSeance() {
   const [ligneEditee, setLigneEditee] = useState<string | null>(null)
   const [reglages, setReglages] = useState(false)
   const [ajout, setAjout] = useState(false)
+  const [aRemplacer, setARemplacer] = useState<ExerciceDeSeance | null>(null)
 
   if (!seances.data) return <Attente requetes={[seances]} />
 
@@ -100,6 +101,9 @@ export default function DetailSeance() {
               <Pencil className="size-4" aria-hidden="true" />
               Modifier la séance
             </Button>
+            <p className="text-center text-sm text-muted-foreground">
+              Ajouter, retirer, remplacer ou réordonner des exercices, changer le jour.
+            </p>
           </div>
 
           {seance.note && (
@@ -111,7 +115,7 @@ export default function DetailSeance() {
           )}
 
           {lignes.length > 0 && (
-            <p className="-mb-4 text-sm text-muted-foreground">
+            <p className="mb-3 text-sm text-muted-foreground">
               Appuie sur un exercice pour changer ses charges, ses séries ou son repos.
             </p>
           )}
@@ -146,12 +150,17 @@ export default function DetailSeance() {
       <EditeurLigne
         ligne={lignes.find((l) => l.id === ligneEditee) ?? null}
         onFermer={() => setLigneEditee(null)}
+        onRemplacer={setARemplacer}
       />
       <EditeurSeance seance={seance} ouvert={reglages} onFermer={() => setReglages(false)} />
       <AjoutExercice
         seanceId={seance.id}
-        ouvert={ajout}
-        onFermer={() => setAjout(false)}
+        remplace={aRemplacer ?? undefined}
+        ouvert={ajout || aRemplacer !== null}
+        onFermer={() => {
+          setAjout(false)
+          setARemplacer(null)
+        }}
         onAjoute={setLigneEditee}
       />
     </>

@@ -21,9 +21,12 @@ const DEFAUTS = { repsMin: 8, repsMax: 12, duree: 30, charge: 20, increment: 2.5
 export function EditeurLigne({
   ligne,
   onFermer,
+  onRemplacer,
 }: {
   ligne: ExerciceDeSeance | null
   onFermer: () => void
+  // Fourni par l'écran qui sait ouvrir le choix d'un exercice de remplacement.
+  onRemplacer?: (ligne: ExerciceDeSeance) => void
 }) {
   return (
     <Sheet open={ligne !== null} onOpenChange={(ouvert) => !ouvert && onFermer()}>
@@ -32,7 +35,7 @@ export function EditeurLigne({
         className="mx-auto max-h-[92dvh] max-w-lg gap-0 overflow-y-auto rounded-t-3xl text-base"
       >
         {/* La clé repart d'un formulaire neuf à chaque exercice ouvert. */}
-        {ligne && <Formulaire key={ligne.id} ligne={ligne} onFermer={onFermer} />}
+        {ligne && <Formulaire key={ligne.id} ligne={ligne} onFermer={onFermer} onRemplacer={onRemplacer} />}
       </SheetContent>
     </Sheet>
   )
@@ -40,14 +43,22 @@ export function EditeurLigne({
 
 function Groupe({ titre, children }: { titre: string; children: React.ReactNode }) {
   return (
-    <fieldset className="space-y-3 border-t px-4 py-4">
+    <fieldset className="min-w-0 space-y-3 border-t px-4 py-4">
       <legend className="float-left mb-3 w-full text-sm font-semibold text-brand">{titre}</legend>
       <div className="clear-both space-y-3">{children}</div>
     </fieldset>
   )
 }
 
-function Formulaire({ ligne, onFermer }: { ligne: ExerciceDeSeance; onFermer: () => void }) {
+function Formulaire({
+  ligne,
+  onFermer,
+  onRemplacer,
+}: {
+  ligne: ExerciceDeSeance
+  onFermer: () => void
+  onRemplacer?: (ligne: ExerciceDeSeance) => void
+}) {
   const { executer, enCours } = useEdition()
 
   const [series, setSeries] = useState(ligne.series)
@@ -223,6 +234,19 @@ function Formulaire({ ligne, onFermer }: { ligne: ExerciceDeSeance; onFermer: ()
         <Button className="h-14 w-full text-lg font-semibold" disabled={enCours} onClick={enregistrer}>
           Enregistrer
         </Button>
+        {onRemplacer && (
+          <Button
+            variant="outline"
+            className="h-11 w-full text-base"
+            disabled={enCours}
+            onClick={() => {
+              onFermer()
+              onRemplacer(ligne)
+            }}
+          >
+            Remplacer par un autre exercice
+          </Button>
+        )}
         <Button variant="destructive" className="h-11 w-full text-base" disabled={enCours} onClick={retirer}>
           Retirer de la séance
         </Button>

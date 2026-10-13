@@ -18,11 +18,10 @@ import {
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { cn } from "cn"
-import { Copy, GripVertical, Plus, Settings2, Trash2 } from "lucide-react"
+import { ChevronRight, Copy, GripVertical, Plus, Settings2, Trash2 } from "lucide-react"
 import { useRouter } from "next/navigation"
 
-import { Carte, Etiquette } from "@/components/blocs"
-import { resumeSeance } from "@/components/sport/seance"
+import { Etiquette } from "@/components/blocs"
 import { Button } from "@/components/ui/button"
 import { useEdition } from "@/lib/edition"
 import { charge, prescription } from "@/lib/format"
@@ -101,19 +100,22 @@ export function ModeEdition({
 
   return (
     <>
-      <Carte className="flex items-center gap-3 p-4">
-        <div className="min-w-0 flex-1">
-          <p className="leading-snug font-semibold">{seance.nom}</p>
-          <p className="text-sm text-muted-foreground">
-            {seance.jour_suggere ? `${majuscule(seance.jour_suggere)} · ` : "Sans jour fixe · "}
-            {resumeSeance(seance)}
-          </p>
-        </div>
-        <Button variant="outline" className="h-11 shrink-0 gap-2 px-3 text-base" onClick={onReglages}>
-          <Settings2 className="size-5" aria-hidden="true" />
-          Réglages
-        </Button>
-      </Carte>
+      <button
+        type="button"
+        onClick={onReglages}
+        className="flex min-h-16 w-full items-center gap-3 rounded-2xl border bg-card px-4 py-3 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:bg-muted"
+      >
+        <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
+          <Settings2 className="size-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block leading-snug font-semibold">Réglages de la séance</span>
+          <span className="block text-sm text-muted-foreground">
+            Nom, lieu, durée · {seance.jour_suggere ? majuscule(seance.jour_suggere) : "sans jour fixe"}
+          </span>
+        </span>
+        <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </button>
 
       <section className="space-y-3">
         <h2 className="text-lg font-semibold tracking-tight">Exercices</h2>
