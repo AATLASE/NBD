@@ -18,9 +18,11 @@ import { useState } from "react"
 
 import { seDeconnecter } from "@/app/login/actions"
 import { Carte, EnTete, Section } from "@/components/blocs"
+import { AvatarCoach } from "@/components/coach/avatar"
 import { Attente } from "@/components/etats"
 import { EditeurProfil, type Profil, type Sujet } from "@/components/parametres/editeurs"
 import { Button } from "@/components/ui/button"
+import { COACH, estUnCoach } from "@/lib/coachs"
 import { nombre } from "@/lib/format"
 import {
   LIBELLE_LIEU_ENTRAINEMENT,
@@ -50,6 +52,34 @@ export default function Parametres() {
   return (
     <>
       <EnTete titre="Paramètres" sousTitre={email.data ?? undefined} />
+
+      <Section titre="Mon coach">
+        <button
+          type="button"
+          onClick={() => setSujet("coach")}
+          className="flex min-h-20 w-full items-center gap-4 rounded-2xl border bg-card p-4 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:bg-muted"
+        >
+          {estUnCoach(p.coach) ? (
+            <>
+              <AvatarCoach coach={p.coach} className="size-14 rounded-2xl" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-lg leading-tight font-bold">{COACH[p.coach].nom}</span>
+                <span className="block text-sm text-muted-foreground">
+                  {COACH[p.coach].titre} · appuie pour en changer
+                </span>
+              </span>
+            </>
+          ) : (
+            <span className="min-w-0 flex-1">
+              <span className="block leading-snug font-semibold">Choisir mon coach</span>
+              <span className="block text-sm text-muted-foreground">
+                Quatre caractères, quatre façons de te répondre et de te motiver.
+              </span>
+            </span>
+          )}
+          <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+        </button>
+      </Section>
 
       <Section titre="Objectifs du jour">
         <Carte className="overflow-hidden">

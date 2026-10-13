@@ -2,16 +2,19 @@
 
 import { useQueryClient } from "@tanstack/react-query"
 import { ArrowUp, MessageCircle } from "lucide-react"
+import Link from "next/link"
 import { useEffect, useMemo, useRef, useState } from "react"
 
 import { EnTete, Vide } from "@/components/blocs"
 import { Bulle, Message, type ActionsChat } from "@/components/chat/message"
+import { AvatarCoach } from "@/components/coach/avatar"
 import { Attente } from "@/components/etats"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { useAujourdhui } from "@/lib/aujourdhui"
+import { COACH, estUnCoach } from "@/lib/coachs"
 import { annoncer, useEdition } from "@/lib/edition"
 import { abandonnerProposition, appliquerProposition } from "@/lib/mutations"
-import { useMessagesChat, useModifications, useQuotaIa } from "@/lib/queries"
+import { useMessagesChat, useModifications, useProfil, useQuotaIa } from "@/lib/queries"
 
 const LONGUEUR_MAX = 2000
 
@@ -26,6 +29,10 @@ export default function Chat() {
   const messages = useMessagesChat()
   const modifications = useModifications()
   const quota = useQuotaIa()
+  const profil = useProfil()
+  // Le coach choisi donne son nom et son portrait au chat. Sans coach : un assistant neutre.
+  const idCoach = estUnCoach(profil.data?.coach) ? profil.data.coach : null
+  const coach = idCoach ? COACH[idCoach] : null
   const queryClient = useQueryClient()
   const { executer, defaire, rafraichir, enCours } = useEdition()
 
@@ -109,23 +116,46 @@ export default function Chat() {
   return (
     <>
       <main className="mx-auto w-full max-w-lg space-y-6 px-4 pt-[calc(1.5rem+env(safe-area-inset-top))] pb-[calc(10.5rem+env(safe-area-inset-bottom))]">
-        <EnTete
-          titre="Chat"
-          sousTitre={
-            limite === null
-              ? "Pose une question ou demande un changement"
-              : `Questions illimitées. Modifications par l'assistant ce mois-ci : ${quota.data?.utilisees ?? 0} sur ${limite}.`
-          }
-        />
+        <div className="flex items-center gap-3">
+          {idCoach && <AvatarCoach coach={idCoach} className="size-14 rounded-2xl" />}
+          <EnTete
+            titre={coach ? coach.nom : "Chat"}
+            sousTitre={
+              limite === null
+                ? coach
+                  ? `${coach.titre} · ton coach`
+                  : "Pose une question ou demande un changement"
+                : `Questions illimitées. Modifications ce mois-ci : ${quota.data?.utilisees ?? 0} sur ${limite}.`
+            }
+          />
+        </div>
 
         {!messages.data ? (
           <Attente requetes={[messages]} />
         ) : vide ? (
           <div className="space-y-4">
-            <Vide Icone={MessageCircle} titre="Ton assistant sport et nutrition">
-              Il connaît tes séances, tes menus et tes mesures. Il répond à tes questions et peut modifier ton programme
-              : tu peux toujours annuler.
-            </Vide>
+            {coach ? (
+              <div className="rounded-2xl border border-dashed px-5 py-6 text-center">
+                <p className="font-medium">« {coach.accroche} »</p>
+                <p className="mx-auto mt-2 max-w-xs text-sm text-muted-foreground">
+                  {coach.nom} connaît tes séances, tes menus et tes mesures. Pose une question ou demande un
+                  changement : tu peux toujours annuler.
+                </p>
+              </div>
+            ) : (
+              <>
+                <Vide Icone={MessageCircle} titre="Ton assistant sport et nutrition">
+                  Il connaît tes séances, tes menus et tes mesures. Il répond à tes questions et peut modifier ton
+                  programme : tu peux toujours annuler.
+                </Vide>
+                <Link
+                  href="/parametres"
+                  className={buttonVariants({ variant: "outline", className: "h-12 w-full text-base" })}
+                >
+                  Choisir mon coach
+                </Link>
+              </>
+            )}
             <ul className="space-y-2">
               {EXEMPLES.map((exemple) => (
                 <li key={exemple}>
@@ -144,13 +174,13 @@ export default function Chat() {
         ) : (
           <div className="space-y-4">
             {messages.data.map((message) => (
-              <Message key={message.id} message={message} actions={actions} />
+              <Message key={message.id} message={message} actions={actions} coach={idCoach} />
             ))}
             {envoi !== null && (
               <>
                 <Bulle deMoi>{envoi}</Bulle>
                 <p role="status" className="animate-pulse px-1 text-muted-foreground motion-reduce:animate-none">
-                  L&apos;assistant réfléchit…
+                  {coach ? `${coach.nom} réfléchit…` : "L'assistant réfléchit…"}
                 </p>
               </>
             )}
@@ -175,7 +205,7 @@ export default function Chat() {
           )}
           <div className="flex items-end gap-2">
             <label htmlFor="message" className="sr-only">
-              Ton message à l&apos;assistant
+              Ton message au coach
             </label>
             <textarea
               id="message"
@@ -184,7 +214,7 @@ export default function Chat() {
               value={brouillon}
               maxLength={LONGUEUR_MAX}
               enterKeyHint="send"
-              placeholder="Écris à ton assistant"
+              placeholder={coach ? `Écris à ${coach.nom}` : "Écris à ton assistant"}
               className="max-h-32 min-h-12 flex-1 resize-none rounded-2xl border bg-card px-4 py-[0.6875rem] text-base leading-6 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               onChange={(evenement) => setBrouillon(evenement.target.value)}
               onKeyDown={(evenement) => {

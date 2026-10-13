@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk"
 
-import { CONSIGNE, construireEtat } from "@/lib/chat/consigne"
+import { CONSIGNE, construireEtat, personnage } from "@/lib/chat/consigne"
 import { creerOutils, nouveauCumul } from "@/lib/chat/outils"
 import type { DonneesMessage, Effet } from "@/lib/chat/types"
 import type { Json } from "@/lib/database.types"
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   if (!user) return echec("Session expirée. Reconnecte-toi.", 401)
 
   const recu = new Date().toISOString()
-  const [{ data: historique }, { etat, alimentsExclus }] = await Promise.all([
+  const [{ data: historique }, { etat, alimentsExclus, coach }] = await Promise.all([
     supabase
       .from("chat_messages")
       .select("role, content, tool_calls")
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
     { role: "user", content: texte },
   ]
 
+  const ton = personnage(coach)
   let reponse = ""
   try {
     const client = new Anthropic()
@@ -78,6 +79,8 @@ export async function POST(request: Request) {
       fallbacks: "default",
       system: [
         { type: "text", text: CONSIGNE, cache_control: { type: "ephemeral" } },
+        // Le coach choisi donne le ton. Sans coach, l'assistant répond d'un ton neutre.
+        ...(ton ? [{ type: "text" as const, text: ton }] : []),
         { type: "text", text: `État actuel du programme de l'utilisateur :\n${JSON.stringify(etat)}` },
       ],
       tools: outils,

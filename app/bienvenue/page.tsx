@@ -7,12 +7,14 @@ import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState, useTransition } from "react"
 
 import { seDeconnecter } from "@/app/login/actions"
+import { ChoixCoach } from "@/components/coach/choix"
 import { Attente } from "@/components/etats"
 import { Option } from "@/components/option"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ALIMENTS_EXCLUS_MAX, BORNES, validerReponses } from "@/lib/accueil"
+import type { IdCoach } from "@/lib/coachs"
 import {
   DESCRIPTION_LIEU_ENTRAINEMENT,
   DESCRIPTION_OBJECTIF,
@@ -44,7 +46,7 @@ const entierDans = (saisie: string, [min, max]: readonly [number, number]) => {
   return saisie.trim() !== "" && Number.isInteger(valeur) && valeur >= min && valeur <= max
 }
 
-const ETAPES = ["Toi", "Ton sport", "Ton alimentation"] as const
+const ETAPES = ["Toi", "Ton sport", "Ton alimentation", "Ton coach"] as const
 const SEANCES = Array.from(
   { length: BORNES.seances[1] - BORNES.seances[0] + 1 },
   (_, index) => BORNES.seances[0] + index
@@ -99,6 +101,7 @@ export default function Bienvenue() {
   const [regime, setRegime] = useState<Regime | null>(null)
   const [exclus, setExclus] = useState<string[]>([])
   const [saisieExclu, setSaisieExclu] = useState("")
+  const [coach, setCoach] = useState<IdCoach | null>(null)
 
   const [erreur, setErreur] = useState<string | null>(null)
   const [enCours, demarrer] = useTransition()
@@ -139,11 +142,13 @@ export default function Bienvenue() {
       niveau: niveau ? null : "Choisis ton niveau.",
     },
     { regime: regime ? null : "Choisis ton régime." },
+    { coach: coach ? null : "Choisis ton coach." },
   ] as const
   const montrer = tentee >= etape
   const e0 = montrer && etape === 0 ? erreursParEtape[0] : null
   const e1 = montrer && etape === 1 ? erreursParEtape[1] : null
   const e2 = montrer && etape === 2 ? erreursParEtape[2] : null
+  const e3 = montrer && etape === 3 ? erreursParEtape[3] : null
   const objectifsComplets = objectifs.length >= OBJECTIFS_MAX
 
   const basculer = <T,>(liste: T[], valeur: T, max = Infinity) =>
@@ -194,7 +199,7 @@ export default function Bienvenue() {
     }
 
     demarrer(async () => {
-      const resultat = await terminerAccueil(reponses).catch(() => ({
+      const resultat = await terminerAccueil(reponses, coach).catch(() => ({
         ok: false as const,
         message: "Pas de réseau. Réessaie dans un instant.",
       }))
@@ -454,6 +459,16 @@ export default function Bienvenue() {
               )}
             </div>
           </>
+        )}
+
+        {etape === 3 && (
+          <Question
+            titre="Choisis ton coach"
+            aide="C'est lui ou elle qui te répondra dans le chat et t'encouragera au fil des jours. Tu pourras en changer dans Paramètres."
+            erreur={e3?.coach}
+          >
+            <ChoixCoach valeur={coach} onChange={setCoach} />
+          </Question>
         )}
 
         {erreur && (

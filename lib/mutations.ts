@@ -3,6 +3,7 @@
 import { ALIMENTS_EXCLUS_MAX, BORNES, validerReponses } from "@/lib/accueil"
 import { calculerCibles } from "@/lib/cibles"
 import { LIGNES_MAX_DU_CHAT, TABLES_DU_CHAT, type DonneesMessage } from "@/lib/chat/types"
+import { COACH, COACHS, estUnCoach, type IdCoach } from "@/lib/coachs"
 import { cleDe, composerListe, type IngredientDePlat } from "@/lib/courses"
 import type { Json } from "@/lib/database.types"
 import { dateCourte, duree, nombre } from "@/lib/format"
@@ -634,9 +635,9 @@ export async function echangerRepas(caseIdA: string, caseIdB: string): Promise<R
 // --- Questionnaire d'accueil ---------------------------------------------------------
 
 // Enregistre les réponses et les cibles nutritionnelles qui en découlent.
-export async function terminerAccueil(brut: unknown): Promise<ResultatEdition> {
+export async function terminerAccueil(brut: unknown, coach: unknown): Promise<ResultatEdition> {
   const reponses = validerReponses(brut)
-  if (!reponses) return INVALIDE
+  if (!reponses || !estUnCoach(coach)) return INVALIDE
 
   const supabase = await createClient()
   const {
@@ -672,6 +673,7 @@ export async function terminerAccueil(brut: unknown): Promise<ResultatEdition> {
           niveau: reponses.niveau,
           regime: reponses.regime,
           aliments_exclus: reponses.alimentsExclus,
+          coach,
           objectif_kcal: cibles.kcal,
           objectif_proteines_g: cibles.proteinesG,
           objectif_lipides_g: cibles.lipidesG,
@@ -1274,6 +1276,7 @@ const REGLES_PROFIL: Record<string, Regle> = {
   objectif_proteines_g: entier(20, 400),
   objectif_lipides_g: entier(10, 300),
   objectif_glucides_g: entier(0, 900),
+  coach: parmi(COACHS),
 }
 
 export type ChampsProfil = Partial<{
@@ -1293,6 +1296,7 @@ export type ChampsProfil = Partial<{
   objectif_proteines_g: number
   objectif_lipides_g: number
   objectif_glucides_g: number
+  coach: string
 }>
 
 // Ce que l'historique dit d'un changement de profil, par groupe de champs.
@@ -1302,6 +1306,7 @@ const SUJETS_PROFIL: [string, string[]][] = [
   ["objectifs", ["objectifs", "zone_blessure", "contrainte_medicale"]],
   ["entraînement", ["lieux_entrainement", "seances_par_semaine", "niveau"]],
   ["alimentation", ["regime", "aliments_exclus"]],
+  ["coach", ["coach"]],
 ]
 
 const identiques = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
@@ -1326,7 +1331,9 @@ export async function modifierProfil(champs: ChampsProfil): Promise<ResultatEdit
   const resume =
     cles.length === 1 && cles[0] === "objectif_kcal"
       ? `Objectif : ${nombre(modifies.objectif_kcal as number)} kcal par jour`
-      : `Profil modifié : ${sujets.join(", ")}`
+      : cles.length === 1 && cles[0] === "coach"
+        ? `Nouveau coach : ${COACH[modifies.coach as IdCoach].nom}`
+        : `Profil modifié : ${sujets.join(", ")}`
   return appliquer(supabase, [{ table: "profiles", operation: "update", id: profil.id, data: modifies }], resume)
 }
 

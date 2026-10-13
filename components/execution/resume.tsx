@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 
 import { Carte, Stat } from "@/components/blocs"
+import { MotDuCoach } from "@/components/coach/mot"
 import { Button } from "@/components/ui/button"
 import type { Tables } from "@/lib/database.types"
 import { annoncer } from "@/lib/edition"
@@ -106,6 +107,8 @@ export function Resume({
   return (
     <div className="mx-auto w-full max-w-lg space-y-5 px-4 pt-5 pb-8">
       <h2 className="text-[1.75rem] leading-tight font-bold tracking-tight">Résumé</h2>
+
+      {faites > 0 && <MotDuCoach moment="fin" date={brouillon.date} />}
 
       <div className="grid grid-cols-2 gap-3">
         <Stat libelle="Séries faites" valeur={`${faites} / ${prevues}`} />

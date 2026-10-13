@@ -4,8 +4,10 @@ import { cn } from "cn"
 import { Check, Undo2, X } from "lucide-react"
 import Markdown from "react-markdown"
 
+import { AvatarCoach } from "@/components/coach/avatar"
 import { Button } from "@/components/ui/button"
 import type { DonneesMessage, Effet } from "@/lib/chat/types"
+import type { IdCoach } from "@/lib/coachs"
 import type { MessageChat } from "@/lib/queries"
 
 // Un message du chat et, pour l'assistant, ce que ses outils ont fait (SPEC 7.3). Trois cas,
@@ -28,9 +30,19 @@ function lireEffets(brut: unknown): Effet[] {
   return Array.isArray(effets) ? effets : []
 }
 
-export function Bulle({ deMoi, children }: { deMoi: boolean; children: React.ReactNode }) {
+export function Bulle({
+  deMoi,
+  coach,
+  children,
+}: {
+  deMoi: boolean
+  // Le coach qui parle, pour afficher son portrait à côté de la bulle.
+  coach?: IdCoach | null
+  children: React.ReactNode
+}) {
   return (
-    <div className={cn("flex", deMoi ? "justify-end" : "justify-start")}>
+    <div className={cn("flex items-start gap-2", deMoi ? "justify-end" : "justify-start")}>
+      {!deMoi && coach && <AvatarCoach coach={coach} className="mt-0.5 size-9 rounded-lg" />}
       <div
         className={cn(
           "max-w-[88%] space-y-2 rounded-2xl px-4 py-2.5 leading-relaxed wrap-break-word",
@@ -192,13 +204,21 @@ function Proposition({
   )
 }
 
-export function Message({ message, actions }: { message: MessageChat; actions: ActionsChat }) {
+export function Message({
+  message,
+  actions,
+  coach,
+}: {
+  message: MessageChat
+  actions: ActionsChat
+  coach: IdCoach | null
+}) {
   if (message.role !== "assistant") return <Bulle deMoi>{message.content}</Bulle>
 
   const effets = lireEffets(message.tool_calls)
   return (
     <div className="space-y-2">
-      <Bulle deMoi={false}>
+      <Bulle deMoi={false} coach={coach}>
         <Texte>{message.content}</Texte>
       </Bulle>
       {effets.map((effet) =>

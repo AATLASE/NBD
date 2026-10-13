@@ -1,5 +1,6 @@
 import "server-only"
 
+import { COACH, estUnCoach, type IdCoach } from "@/lib/coachs"
 import { semaineMenu, semaineProgramme } from "@/lib/regles"
 import type { createClient } from "@/lib/supabase/server"
 
@@ -41,6 +42,17 @@ N'utilise dans aucune recette un aliment qu'il a exclu : la liste est dans son p
 - Il demande ce qu'il mange ce soir : lis les menus du jour et réponds.
 - Il veut déplacer un repas : échange les deux cases, une par appel d'outil.`
 
+// Le personnage du coach choisi. Il ne change que la forme des réponses : il vient après la
+// consigne commune, qui garde les mêmes outils et les mêmes règles pour tous.
+export function personnage(coach: IdCoach | null) {
+  if (!coach) return null
+  return `## Ton personnage
+
+${COACH[coach].style}
+
+Ce personnage donne le ton, jamais le fond : les faits, les chiffres, les outils et les règles ci-dessus restent exactement les mêmes, et un refus reste un refus. Garde des réponses courtes, sans emoji. Une touche de caractère par réponse suffit. Ne te présente pas et ne signe pas tes messages.`
+}
+
 // Partie variable : l'état du programme au moment du message (SPEC 7.1).
 export async function construireEtat(supabase: Client, aujourdhui: string) {
   const depuis = new Date(`${aujourdhui}T00:00:00`)
@@ -74,6 +86,7 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
 
   return {
     alimentsExclus: p?.aliments_exclus ?? [],
+    coach: estUnCoach(p?.coach) ? p.coach : null,
     etat: {
       aujourdhui,
       semaine_du_programme: semaine,

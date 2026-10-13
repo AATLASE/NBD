@@ -4,6 +4,7 @@ import { Check, ChevronRight, Play } from "lucide-react"
 import Link from "next/link"
 
 import { Carte, EnTete, Etiquette, Lettre, Section } from "@/components/blocs"
+import { MotDuCoach } from "@/components/coach/mot"
 import { Attente } from "@/components/etats"
 import { Reperes } from "@/components/reperes"
 import { BoutonDemarrer } from "@/components/sport/bouton-demarrer"
@@ -69,6 +70,12 @@ export default function SportAujourdhui() {
       <EnTete
         titre={majuscule(dateLongue(aujourdhui))}
         sousTitre={`Semaine ${semaine} du programme`}
+      />
+
+      <MotDuCoach
+        inviter
+        date={aujourdhui}
+        moment={faiteAujourdhui ? "faite" : seanceDuJour ? "seance" : "repos"}
       />
 
       <Reperes aujourdhui={aujourdhui} />

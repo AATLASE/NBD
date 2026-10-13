@@ -3,6 +3,7 @@
 import { Calculator, Plus, X } from "lucide-react"
 import { useState } from "react"
 
+import { ChoixCoach } from "@/components/coach/choix"
 import { Stepper } from "@/components/execution/stepper"
 import { Filtres } from "@/components/nutrition/repas"
 import { Option } from "@/components/option"
@@ -12,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { ALIMENTS_EXCLUS_MAX, BORNES } from "@/lib/accueil"
 import { calculerCibles } from "@/lib/cibles"
+import { estUnCoach, type IdCoach } from "@/lib/coachs"
 import type { Tables } from "@/lib/database.types"
 import { useEdition } from "@/lib/edition"
 import { nombre } from "@/lib/format"
@@ -38,9 +40,10 @@ import { modifierBudget, modifierProfil, type ChampsProfil } from "@/lib/mutatio
 // Les feuilles de modification de l'onglet Paramètres : une par sujet, ouverte depuis sa ligne.
 
 export type Profil = Tables<"profiles">
-export type Sujet = "nutrition" | "mensurations" | "objectifs" | "entrainement" | "alimentation" | "budget"
+export type Sujet = "coach" | "nutrition" | "mensurations" | "objectifs" | "entrainement" | "alimentation" | "budget"
 
 const TITRES: Record<Sujet, { titre: string; description: string }> = {
+  coach: { titre: "Mon coach", description: "Il donne son ton à l'assistant et aux petits mots de l'accueil. Tu peux en changer quand tu veux." },
   nutrition: { titre: "Objectifs du jour", description: "Ce que tu vises chaque jour. Les jauges de l'onglet Nutrition s'y réfèrent." },
   mensurations: { titre: "Mensurations", description: "Elles servent à calculer tes besoins et à tracer ta courbe de poids." },
   objectifs: { titre: "Mes objectifs", description: `Jusqu'à ${OBJECTIFS_MAX}. L'assistant en tient compte.` },
@@ -128,6 +131,7 @@ function Formulaire({ profil, sujet, onFermer }: { profil: Profil; sujet: Sujet;
     })
   }
 
+  if (sujet === "coach") return <CoachChoisi profil={profil} enCours={enCours} onEnregistrer={enregistrer} />
   if (sujet === "nutrition") return <Nutrition profil={profil} enCours={enCours} onEnregistrer={enregistrer} />
   if (sujet === "mensurations") return <Mensurations profil={profil} enCours={enCours} onEnregistrer={enregistrer} />
   if (sujet === "objectifs") return <Objectifs profil={profil} enCours={enCours} onEnregistrer={enregistrer} />
@@ -137,6 +141,24 @@ function Formulaire({ profil, sujet, onFermer }: { profil: Profil; sujet: Sujet;
 }
 
 type PropsSujet = { profil: Profil; enCours: boolean; onEnregistrer: (champs: ChampsProfil) => void }
+
+// --- Coach ----------------------------------------------------------------------------------
+
+function CoachChoisi({ profil, enCours, onEnregistrer }: PropsSujet) {
+  const [coach, setCoach] = useState<IdCoach | null>(estUnCoach(profil.coach) ? profil.coach : null)
+  return (
+    <>
+      <Bloc>
+        <ChoixCoach valeur={coach} onChange={setCoach} />
+      </Bloc>
+      <Pied
+        bloque={enCours || coach === null}
+        raison={coach === null ? "Choisis un coach." : null}
+        onEnregistrer={() => coach && onEnregistrer({ coach })}
+      />
+    </>
+  )
+}
 
 // --- Objectifs nutritionnels ---------------------------------------------------------------
 
