@@ -1,14 +1,15 @@
 "use client"
 
 import { cn } from "cn"
-import { CircleCheck, CircleDashed, Footprints, Lock, Plus } from "lucide-react"
+import { CircleCheck, CircleDashed, Footprints, Lock, Plus, Watch } from "lucide-react"
+import Link from "next/link"
 import { useState } from "react"
 
 import { Carte, EnTete, Etiquette, Section, Vide } from "@/components/blocs"
 import { Attente } from "@/components/etats"
 import { Stepper } from "@/components/execution/stepper"
 import { SaisieDouleur } from "@/components/sport/saisie-douleur"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useAujourdhui } from "@/lib/aujourdhui"
 import { useEdition } from "@/lib/edition"
@@ -75,10 +76,19 @@ export default function Course() {
         sousTitre={plan.length > 0 ? `Reprise progressive sur ${plan.length} semaines` : "Tes sorties"}
       />
 
-      <Button className="h-14 w-full gap-2 text-lg font-semibold" onClick={() => setSaisie(true)}>
-        <Plus className="size-5" aria-hidden="true" />
-        Enregistrer une sortie
-      </Button>
+      <div className="space-y-3">
+        <Button className="h-14 w-full gap-2 text-lg font-semibold" onClick={() => setSaisie(true)}>
+          <Plus className="size-5" aria-hidden="true" />
+          Enregistrer une sortie
+        </Button>
+        <Link
+          href="/parametres/import?type=montre"
+          className={buttonVariants({ variant: "outline", className: "h-12 w-full gap-2 text-base font-semibold" })}
+        >
+          <Watch className="size-4" aria-hidden="true" />
+          Importer depuis ma montre
+        </Link>
+      </div>
 
       {sansLendemain && (
         <Carte className="border-2 border-primary p-4">

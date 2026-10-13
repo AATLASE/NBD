@@ -3,6 +3,7 @@
 import {
   ChevronRight,
   Dumbbell,
+  FileSpreadsheet,
   History,
   LogOut,
   Pencil,
@@ -11,6 +12,7 @@ import {
   Sparkles,
   Target,
   Utensils,
+  Watch,
   type LucideIcon,
 } from "lucide-react"
 import Link from "next/link"
@@ -134,6 +136,31 @@ export default function Parametres() {
                     : `${quota.data.utilisees} demande${quota.data.utilisees > 1 ? "s" : ""} sur ${quota.data.limite} utilisée${quota.data.utilisees > 1 ? "s" : ""} ce mois-ci`
               }
               href="/bienvenue/programme"
+            />
+          </ul>
+        </Carte>
+      </Section>
+
+      <Section titre="Importer">
+        <Carte>
+          <ul className="divide-y">
+            <Ligne
+              Icone={FileSpreadsheet}
+              titre="Des séances depuis un fichier"
+              valeur="Excel ou CSV, ou un export de Strong ou Hevy"
+              href="/parametres/import?type=seances"
+            />
+            <Ligne
+              Icone={FileSpreadsheet}
+              titre="Un plan nutrition depuis un fichier"
+              valeur="Excel ou CSV : tes plats et tes menus"
+              href="/parametres/import?type=nutrition"
+            />
+            <Ligne
+              Icone={Watch}
+              titre="Une activité de ta montre"
+              valeur="Fichier FIT, TCX ou GPX de Garmin ou Coros"
+              href="/parametres/import?type=montre"
             />
           </ul>
         </Carte>

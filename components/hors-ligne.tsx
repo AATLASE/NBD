@@ -26,6 +26,7 @@ const ECRANS = [
   "/historique",
   "/chat",
   "/parametres",
+  "/parametres/import",
 ]
 
 // Socle hors ligne (SPEC, phase 8), présent sur tous les écrans :

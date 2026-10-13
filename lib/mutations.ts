@@ -4,6 +4,7 @@ import { ALIMENTS_EXCLUS_MAX, BORNES, validerReponses } from "@/lib/accueil"
 import { calculerCibles } from "@/lib/cibles"
 import { LIGNES_MAX_DU_CHAT, TABLES_DU_CHAT, type DonneesMessage } from "@/lib/chat/types"
 import { COACH, COACHS, estUnCoach, type IdCoach } from "@/lib/coachs"
+import { ImportNutritionSchema, ImportSeancesSchema } from "@/lib/import/schemas"
 import { cleDe, composerListe, type IngredientDePlat } from "@/lib/courses"
 import type { Json } from "@/lib/database.types"
 import { dateCourte, duree, nombre } from "@/lib/format"
@@ -23,8 +24,17 @@ import {
   TAGS,
 } from "@/lib/libelles"
 import { lireContexte } from "@/lib/proposition/contexte"
-import { nettoyerNutrition, nettoyerSport, repartirSurDeuxSemaines } from "@/lib/proposition/garde-fous"
-import { PropositionNutritionSchema, PropositionSportSchema } from "@/lib/proposition/schemas"
+import {
+  nettoyerExercice,
+  nettoyerNutrition,
+  nettoyerSport,
+  repartirSurDeuxSemaines,
+} from "@/lib/proposition/garde-fous"
+import {
+  PropositionNutritionSchema,
+  PropositionSportSchema,
+  type ExercicePropose,
+} from "@/lib/proposition/schemas"
 import { createClient } from "@/lib/supabase/server"
 
 // Couche d'écriture unique (SPEC section 4). Aucun composant n'écrit en base directement :
@@ -706,6 +716,22 @@ export async function adopterProgrammeSport(brut: unknown): Promise<ResultatEdit
   const { proposition } = nettoyerSport(lue.data, contexte.garde)
   if (proposition.seances.length === 0) return INVALIDE
 
+  const changements = await changementsDeSeances(supabase, proposition.seances)
+  const n = proposition.seances.length
+  return appliquer(supabase, changements, `Programme proposé adopté : ${n} séance${n > 1 ? "s" : ""}`)
+}
+
+type SeanceAAjouter = {
+  nom: string
+  lieu: string
+  duree_min: number
+  jour: string | null
+  note: string | null
+  exercices: ExercicePropose[]
+}
+
+// Les écritures qui ajoutent des séances complètes au programme, à la suite de celles qui existent.
+async function changementsDeSeances(supabase: Client, aAjouter: SeanceAAjouter[]): Promise<Changement[]> {
   const [{ data: exercices }, { data: seances }] = await Promise.all([
     supabase.from("exercises").select("id, nom"),
     supabase.from("workouts").select("code, ordre, archived"),
@@ -718,7 +744,7 @@ export async function adopterProgrammeSport(brut: unknown): Promise<ResultatEdit
   let ordre = Math.max(0, ...(seances ?? []).map((s) => s.ordre))
   const changements: Changement[] = []
 
-  for (const seance of proposition.seances) {
+  for (const seance of aAjouter) {
     const seanceId = crypto.randomUUID()
     const code = codeLibre(codes)
     codes.push(code)
@@ -771,9 +797,7 @@ export async function adopterProgrammeSport(brut: unknown): Promise<ResultatEdit
       })
     })
   }
-
-  const n = proposition.seances.length
-  return appliquer(supabase, changements, `Programme proposé adopté : ${n} séance${n > 1 ? "s" : ""}`)
+  return changements
 }
 
 export async function adopterPlanNutrition(brut: unknown): Promise<ResultatEdition> {
@@ -828,6 +852,169 @@ export async function adopterPlanNutrition(brut: unknown): Promise<ResultatEditi
 
   const n = proposition.plats.length
   return appliquer(supabase, changements, `Plan nutritif proposé adopté : ${n} plat${n > 1 ? "s" : ""}`)
+}
+
+// --- Import depuis un fichier -----------------------------------------------------------
+// Le fichier est lu sur le téléphone ; seul son contenu, déjà mis en forme, arrive ici. Il est
+// revalidé et borné comme toute autre saisie. C'est le programme de la personne : rien n'en est
+// retiré au nom de son profil, contrairement à une proposition de l'assistant.
+
+const borner = (valeur: number, min: number, max: number) => Math.min(max, Math.max(min, valeur))
+
+export async function importerSeances(brut: unknown): Promise<ResultatEdition> {
+  const lue = ImportSeancesSchema.safeParse(brut)
+  if (!lue.success) return INVALIDE
+
+  const seances = lue.data.seances
+    .map((seance) => ({
+      ...seance,
+      nom: seance.nom.trim().slice(0, 60) || "Séance importée",
+      duree_min: borner(seance.duree_min, 10, 180),
+      note: seance.note?.trim().slice(0, 500) || null,
+      exercices: seance.exercices.filter((exercice) => exercice.nom.trim().length >= 2).map(nettoyerExercice),
+    }))
+    .filter((seance) => seance.exercices.length > 0)
+  if (seances.length === 0) return INVALIDE
+
+  const supabase = await createClient()
+  const changements = await changementsDeSeances(supabase, seances)
+  const n = seances.length
+  return appliquer(supabase, changements, `Import : ${n} séance${n > 1 ? "s" : ""} ajoutée${n > 1 ? "s" : ""}`)
+}
+
+export async function importerPlanNutrition(brut: unknown): Promise<ResultatEdition> {
+  const lue = ImportNutritionSchema.safeParse(brut)
+  if (!lue.success) return INVALIDE
+
+  const plats = lue.data.plats.map((plat) => ({
+    nom: plat.nom.trim().slice(0, 90),
+    slot: plat.slot,
+    kcal: Math.round(borner(plat.kcal, 0, 3000)),
+    proteines_g: Math.round(borner(plat.proteines_g, 0, 300)),
+    lipides_g: plat.lipides_g === null ? null : Math.round(borner(plat.lipides_g, 0, 300)),
+    glucides_g: plat.glucides_g === null ? null : Math.round(borner(plat.glucides_g, 0, 500)),
+    temps_min: plat.temps_min === null ? null : Math.round(borner(plat.temps_min, 0, 600)),
+    recette_md: plat.recette_md?.trim().slice(0, 3000) || null,
+    ingredients: plat.ingredients
+      .map((ingredient) => ({
+        nom: ingredient.nom.trim().slice(0, 80),
+        quantite: ingredient.quantite === null ? null : borner(ingredient.quantite, 0, 5000),
+        unite: ingredient.unite?.trim().slice(0, 20) || null,
+      }))
+      .filter((ingredient) => ingredient.nom.length > 0),
+  }))
+  if (plats.some((plat) => plat.nom.length < 2)) return INVALIDE
+
+  const supabase = await createClient()
+  const [{ data: connus }, { data: cases }] = await Promise.all([
+    supabase.from("meals").select("id, nom, slot, archived"),
+    supabase.from("meal_plan").select("id, semaine, jour, slot, meal_id"),
+  ])
+
+  // Un plat déjà dans les recettes, sous le même nom et pour le même repas, est réutilisé tel quel.
+  const cle = (nom: string, slot: string) => `${nom.trim().toLowerCase()}|${slot}`
+  const idParCle = new Map((connus ?? []).filter((m) => !m.archived).map((m) => [cle(m.nom, m.slot), m.id]))
+  const changements: Changement[] = []
+  let nouveaux = 0
+
+  const ids = plats.map((plat) => {
+    const connu = idParCle.get(cle(plat.nom, plat.slot))
+    if (connu) return connu
+    const id = crypto.randomUUID()
+    idParCle.set(cle(plat.nom, plat.slot), id)
+    nouveaux += 1
+    changements.push({ table: "meals", operation: "insert", id, data: { ...plat, tag: "standard" } })
+    return id
+  })
+
+  // Les menus : une case du fichier remplace ce que le plan prévoyait à cet endroit.
+  const vues = new Set<string>()
+  let remplies = 0
+  for (const cible of lue.data.cases) {
+    const plat = plats[cible.plat]
+    const position = `${cible.semaine}|${cible.jour}|${cible.slot}`
+    if (!plat || plat.slot !== cible.slot || vues.has(position)) continue
+    vues.add(position)
+
+    const mealId = ids[cible.plat]!
+    const existante = (cases ?? []).find(
+      (c) => c.semaine === cible.semaine && c.jour === cible.jour && c.slot === cible.slot
+    )
+    if (existante?.meal_id === mealId) continue
+    remplies += 1
+    changements.push(
+      existante
+        ? { table: "meal_plan", operation: "update", id: existante.id, data: { meal_id: mealId } }
+        : {
+            table: "meal_plan",
+            operation: "insert",
+            id: crypto.randomUUID(),
+            data: { semaine: cible.semaine, jour: cible.jour, slot: cible.slot, meal_id: mealId },
+          }
+    )
+  }
+
+  if (changements.length === 0) {
+    return { ok: false, message: "Rien à importer : ces plats et ces menus sont déjà dans ton programme." }
+  }
+  const morceaux = [
+    nouveaux > 0 && `${nouveaux} plat${nouveaux > 1 ? "s" : ""} ajouté${nouveaux > 1 ? "s" : ""}`,
+    remplies > 0 && `${remplies} repas placé${remplies > 1 ? "s" : ""} dans les menus`,
+  ].filter(Boolean)
+  return appliquer(supabase, changements, `Import : ${morceaux.join(", ")}`)
+}
+
+// Une activité enregistrée par la montre. Une sortie rejoint le suivi de course ; une séance de
+// musculation rejoint le journal de la séance choisie, sans ses séries : la montre ne sait pas à
+// quel exercice du programme chacune correspond.
+export type ActiviteAImporter =
+  | { vers: "course"; date: string; km: number; dureeMin: number; douleurApres: number }
+  | { vers: "seance"; workoutId: string; date: string; dureeMin: number; note: string | null }
+
+export async function importerActivite(activite: ActiviteAImporter): Promise<ResultatEdition> {
+  if (typeof activite !== "object" || activite === null) return INVALIDE
+  // Une activité ne peut pas dater de demain (un jour de marge pour les fuseaux horaires).
+  const demain = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+  if (!DATE.test(activite.date) || activite.date > demain || !entier(1, 1440)(activite.dureeMin)) return INVALIDE
+
+  const supabase = await createClient()
+
+  if (activite.vers === "course") {
+    if (!decimal(0, 500)(activite.km) || !douleurValide(activite.douleurApres)) return INVALIDE
+    const km = Math.round(activite.km * 100) / 100
+    return appliquer(
+      supabase,
+      [
+        {
+          table: "running_logs",
+          operation: "insert",
+          id: crypto.randomUUID(),
+          data: { date: activite.date, km, duree_min: activite.dureeMin, douleur_apres: activite.douleurApres },
+        },
+      ],
+      `Sortie importée de la montre : ${nombre(km)} km en ${activite.dureeMin} min, douleur ${activite.douleurApres} sur 10`
+    )
+  }
+
+  if (activite.vers !== "seance" || !UUID.test(activite.workoutId) || !ouNul(texte(0, 300))(activite.note)) {
+    return INVALIDE
+  }
+  const { data: seance } = await supabase.from("workouts").select("code").eq("id", activite.workoutId).maybeSingle()
+  if (!seance) return INTROUVABLE
+
+  const { data, error } = await supabase.rpc("enregistrer_seance_importee", {
+    p_workout_id: activite.workoutId,
+    p_date: activite.date,
+    p_duree_min: activite.dureeMin,
+    // La colonne accepte null ; le type généré ne le reflète pas pour les arguments de fonction.
+    p_note: (activite.note?.trim() || null) as string,
+  })
+  if (error) return echec(error)
+  return {
+    ok: true,
+    groupeId: data,
+    resume: `Séance ${seance.code} importée de la montre : ${activite.dureeMin} min`,
+  }
 }
 
 // --- Suivi : pied ------------------------------------------------------------------

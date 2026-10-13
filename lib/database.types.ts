@@ -380,6 +380,9 @@ isOneToOne: false
 "enregistrer_seance":
 { Args: { "p_date": string,"p_duree_min": number,"p_id": string,"p_ressenti": number,"p_series": Json,"p_source"?: string,"p_workout_id": string }; Returns: string
                            },
+"enregistrer_seance_importee":
+{ Args: { "p_date": string,"p_duree_min": number,"p_note": string,"p_workout_id": string }; Returns: string
+                           },
 "etat_demandes_ia":
 { Args: Record<PropertyKey, never>; Returns: {
               "limite": number,"utilisees": number

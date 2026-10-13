@@ -187,8 +187,8 @@
   --bandeau-reseau: calc(2rem + env(safe-area-inset-top));
 }
 
-/* Le chat a une zone de saisie fixe au-dessus de la navigation : le bandeau d'annulation se place au-dessus d'elle. */
-:root:has([data-saisie-chat]) {
+/* Le chat a une zone de saisie fixe au-dessus de la navigation, l'import une barre d'action : le bandeau d'annulation se place au-dessus. */
+:root:has([data-saisie-chat], [data-barre-fixe]) {
   --bas-du-bandeau: 9.5rem;
 }
 

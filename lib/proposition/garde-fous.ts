@@ -34,7 +34,7 @@ const sansAccent = (texte: string) =>
 const MATERIEL_DE_SALLE = ["barre", "poulie", "machine"]
 const EXERCICES_MAX_PAR_SEANCE = 12
 
-function nettoyerExercice(exercice: ExercicePropose): ExercicePropose {
+export function nettoyerExercice(exercice: ExercicePropose): ExercicePropose {
   const aDuree = exercice.duree_sec !== null
   const repsMin = aDuree || exercice.reps_min === null ? null : borner(exercice.reps_min, 1, 100)
   const repsMax = aDuree || exercice.reps_max === null ? repsMin : borner(exercice.reps_max, 1, 100)
