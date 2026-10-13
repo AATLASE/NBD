@@ -172,6 +172,16 @@
   }
 }
 
+/* Une fiche qui s'ouvre du bas ne dépasse jamais l'écran : trop haute, elle défile. Dans la couche
+   de base et sans priorité (:where), pour que chaque fiche garde la hauteur qu'elle demande. */
+@layer base {
+  :where([data-slot="sheet-content"][data-side="bottom"]) {
+    max-height: 100dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
 /* Quand le bandeau « hors ligne » est affiché en haut, les écrans en pleine hauteur lui laissent sa place. */
 :root:has([data-etat-reseau]) {
   --bandeau-reseau: calc(2rem + env(safe-area-inset-top));
