@@ -1,13 +1,15 @@
 "use client"
 
-import { ArrowLeftRight, BookOpen } from "lucide-react"
+import { ArrowLeftRight, BookOpen, Pencil } from "lucide-react"
 import Link from "next/link"
+import { useState } from "react"
 
+import { EditeurPlat } from "@/components/nutrition/editeur-plat"
 import { EtiquetteTag, macros } from "@/components/nutrition/repas"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { LIBELLE_SLOT, majuscule } from "@/lib/libelles"
-import { useRepas, type CasePlan } from "@/lib/queries"
+import { useRepas, type CasePlan, type Repas } from "@/lib/queries"
 
 const LIGNE =
   "flex min-h-14 w-full items-center gap-3 px-4 py-2 text-left outline-none first:rounded-t-2xl last:rounded-b-2xl focus-visible:bg-muted active:bg-muted"
@@ -29,11 +31,15 @@ export function EditeurCase({
   onEchanger: (a: CasePlan, b: CasePlan) => void
 }) {
   const repas = useRepas()
+  // Le plat en cours de modification : sa fiche s'ouvre une fois celle de la case refermée.
+  const [platEdite, setPlatEdite] = useState<Repas | null>(null)
   const candidats = casePlan
     ? (repas.data ?? []).filter((r) => r.slot === casePlan.slot && r.id !== casePlan.meal_id)
     : []
 
   return (
+    <>
+    <EditeurPlat plat={platEdite} ouvert={platEdite !== null} onFermer={() => setPlatEdite(null)} />
     <Sheet open={casePlan !== null} onOpenChange={(ouvert) => !ouvert && onFermer()}>
       <SheetContent
         side="bottom"
@@ -65,7 +71,19 @@ export function EditeurCase({
                   </Link>
                   <Button
                     variant="outline"
-                    className="h-12 text-base"
+                    className="h-12 gap-2 text-base"
+                    onClick={() => {
+                      const plat = casePlan.meal
+                      onFermer()
+                      setPlatEdite(plat)
+                    }}
+                  >
+                    <Pencil className="size-4" aria-hidden="true" />
+                    Modifier le plat
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="col-span-2 h-12 text-base"
                     onClick={() => {
                       onFermer()
                       onRemplacer(casePlan, null)
@@ -140,5 +158,6 @@ export function EditeurCase({
         )}
       </SheetContent>
     </Sheet>
+    </>
   )
 }

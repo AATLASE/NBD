@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useEdition } from "@/lib/edition"
 import { pasPourIncrement } from "@/lib/execution"
-import { modifierLigne, retirerExercice, type ChampsLigne } from "@/lib/mutations"
+import { modifierLigne, renommerExercice, retirerExercice, type ChampsLigne } from "@/lib/mutations"
 import type { ExerciceDeSeance, Seance } from "@/lib/queries"
 
 type Mesure = "reps" | "duree" | "libre"
@@ -75,6 +75,8 @@ function Formulaire({
   const [increment, setIncrement] = useState(ligne.increment_kg ?? DEFAUTS.increment)
   const [bloc, setBloc] = useState<"series" | "circuit">(ligne.bloc === "circuit" ? "circuit" : "series")
   const [note, setNote] = useState(ligne.note ?? "")
+  const [nom, setNom] = useState(ligne.exercise.nom)
+  const nomValide = nom.trim().length >= 2
 
   const pas = pasPourIncrement(increment)
 
@@ -111,6 +113,20 @@ function Formulaire({
     ) as ChampsLigne
 
     onFermer()
+    // Le nom appartient à l'exercice, pas à la ligne : il change dans toutes les séances.
+    const nouveauNom = nom.trim()
+    if (nouveauNom !== ligne.exercise.nom) {
+      await executer(() => renommerExercice(ligne.exercise.id, nouveauNom), {
+        cle: ["seances"],
+        maj: (seances: Seance[]) =>
+          seances.map((seance) => ({
+            ...seance,
+            workout_exercises: seance.workout_exercises.map((l) =>
+              l.exercise.id === ligne.exercise.id ? { ...l, exercise: { ...l.exercise, nom: nouveauNom } } : l
+            ),
+          })),
+      })
+    }
     if (Object.keys(champs).length === 0) return
     await executer(
       () => modifierLigne(ligne.id, champs),
@@ -132,6 +148,24 @@ function Formulaire({
         <SheetTitle className="text-xl font-bold">{ligne.exercise.nom}</SheetTitle>
         <SheetDescription className="text-base">Réglages de cet exercice dans la séance</SheetDescription>
       </SheetHeader>
+
+      <Groupe titre="Exercice">
+        <div className="space-y-2">
+          <Label htmlFor="nom-exercice">Nom</Label>
+          <Input
+            id="nom-exercice"
+            value={nom}
+            maxLength={60}
+            autoComplete="off"
+            aria-describedby="nom-exercice-aide"
+            onChange={(evenement) => setNom(evenement.target.value)}
+            className="h-12"
+          />
+          <p id="nom-exercice-aide" className="text-sm text-muted-foreground">
+            Le nom change partout où cet exercice apparaît, historique compris.
+          </p>
+        </div>
+      </Groupe>
 
       <Groupe titre="Charge">
         <Filtres
@@ -231,7 +265,7 @@ function Formulaire({
       </Groupe>
 
       <div className="sticky bottom-0 space-y-2 border-t bg-popover px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-        <Button className="h-14 w-full text-lg font-semibold" disabled={enCours} onClick={enregistrer}>
+        <Button className="h-14 w-full text-lg font-semibold" disabled={enCours || !nomValide} onClick={enregistrer}>
           Enregistrer
         </Button>
         {onRemplacer && (

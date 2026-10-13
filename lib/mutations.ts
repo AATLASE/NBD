@@ -296,6 +296,26 @@ async function trouverOuCreerExercice(
   }
 }
 
+// Change le nom d'un exercice. Le nom change partout où l'exercice apparaît : dans toutes les
+// séances qui l'utilisent et dans l'historique de ses séries.
+export async function renommerExercice(exerciseId: string, nom: string): Promise<ResultatEdition> {
+  if (!UUID.test(exerciseId) || !texte(2, 60)(nom)) return INVALIDE
+  const propre = nom.trim()
+  const supabase = await createClient()
+  const { data: exercices } = await supabase.from("exercises").select("id, nom").not("archived", "is", true)
+  const exercice = exercices?.find((e) => e.id === exerciseId)
+  if (!exercice) return INTROUVABLE
+  if (exercice.nom === propre) return SANS_EFFET
+  if (exercices!.some((e) => e.id !== exerciseId && cleDe(e.nom) === cleDe(propre))) {
+    return { ok: false, message: `Tu as déjà un exercice nommé « ${propre} ».` }
+  }
+  return appliquer(
+    supabase,
+    [{ table: "exercises", operation: "update", id: exerciseId, data: { nom: propre } }],
+    `Exercice renommé : ${exercice.nom} devient ${propre}`
+  )
+}
+
 // Remplace l'exercice d'une ligne par un autre, à la même place. Séries, répétitions et repos sont
 // repris ; les charges repartent de zéro, elles n'ont pas de sens d'un mouvement à l'autre.
 // L'ancienne ligne est archivée, pas réécrite : ses séries passées restent attachées au bon exercice.

@@ -1,6 +1,6 @@
 "use client"
 
-import { Plus, Trash2 } from "lucide-react"
+import { Calculator, Plus, Sparkles, Trash2 } from "lucide-react"
 import { useState } from "react"
 
 import { Stepper } from "@/components/execution/stepper"
@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { useEdition } from "@/lib/edition"
 import { LIBELLE_SLOT, LIBELLE_TAG, SLOTS, TAGS } from "@/lib/libelles"
 import { enregistrerPlat, type ChampsPlat, type IngredientDuPlat } from "@/lib/mutations"
+import { estimerPlat, type Estimation } from "@/lib/nutriments"
 import type { Repas } from "@/lib/queries"
 
 const INGREDIENTS_MAX = 30
@@ -102,10 +103,74 @@ function Formulaire({
   const [ingredients, setIngredients] = useState<LigneIngredient[]>(() => lireIngredients(plat?.ingredients))
   const [recette, setRecette] = useState(plat?.recette_md ?? "")
   const [compteur, setCompteur] = useState(1000)
+  const [estimation, setEstimation] = useState<Estimation | null>(null)
+  const [assistant, setAssistant] = useState<EtatAssistant>({ etat: "repos" })
 
   const nomValide = nom.trim().length >= 2
+
+  const ingredientsSaisis = (): IngredientDuPlat[] =>
+    ingredients
+      .filter((l) => l.nom.trim() !== "")
+      .map((l) => ({ nom: l.nom.trim(), quantite: lireQuantite(l.quantite), unite: l.unite.trim() || null }))
+
+  // Estime les calories et les protéines d'après les ingrédients saisis, et remplit les deux
+  // valeurs. Elles restent modifiables à la main : c'est une estimation, parfois partielle.
+  function recalculer() {
+    const resultat = estimerPlat(ingredientsSaisis())
+    setAssistant({ etat: "repos" })
+    setEstimation(resultat)
+    if (resultat.kcal === 0 && resultat.proteines === 0) return
+    setKcal(Math.min(3000, resultat.kcal))
+    setProteines(Math.min(300, resultat.proteines))
+  }
   const changerIngredient = (cle: number, champ: Partial<LigneIngredient>) =>
     setIngredients((lignes) => lignes.map((l) => (l.cle === cle ? { ...l, ...champ } : l)))
+
+  // La même estimation, demandée à l'assistant : il compte aussi ce qui n'a pas de quantité ou
+  // n'est pas dans la table, et dit ce qu'il a supposé. Rien n'est enregistré à ce stade.
+  async function recalculerAvecAssistant() {
+    const liste = ingredientsSaisis()
+    setEstimation(null)
+    if (liste.length === 0) {
+      setAssistant({ etat: "erreur", message: "Ajoute d'abord au moins un ingrédient." })
+      return
+    }
+    if (!navigator.onLine) {
+      setAssistant({
+        etat: "erreur",
+        message: "Hors ligne : l'assistant a besoin du réseau. Le calcul d'après les ingrédients, lui, fonctionne.",
+      })
+      return
+    }
+    setAssistant({ etat: "calcul" })
+    try {
+      const reponse = await fetch("/api/plat/estimation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ nom: nom.trim(), ingredients: liste, recette: recette.trim() || null }),
+      })
+      const corps = (await reponse.json().catch(() => null)) as {
+        ok?: boolean
+        message?: string
+        estimation?: { kcal: number; proteines_g: number; lipides_g: number; glucides_g: number; hypotheses: string[] }
+      } | null
+      if (!reponse.ok || !corps?.ok || !corps.estimation) {
+        setAssistant({ etat: "erreur", message: corps?.message ?? "L'assistant ne répond pas. Réessaie." })
+        return
+      }
+      const e = corps.estimation
+      const rien = e.kcal === 0 && e.proteines_g === 0
+      if (!rien) {
+        setKcal(e.kcal)
+        setProteines(e.proteines_g)
+        setLipides(e.lipides_g)
+        setGlucides(e.glucides_g)
+      }
+      setAssistant({ etat: "fait", kcal: e.kcal, proteines: e.proteines_g, hypotheses: e.hypotheses, rien })
+    } catch {
+      setAssistant({ etat: "erreur", message: "Pas de réseau. L'assistant n'a pas pu répondre." })
+    }
+  }
 
   async function enregistrer() {
     const champs: ChampsPlat = {
@@ -118,15 +183,7 @@ function Formulaire({
       glucides_g: detail ? glucides : null,
       temps_min: avecTemps ? temps : null,
       recette_md: recette.trim() || null,
-      ingredients: ingredients
-        .filter((l) => l.nom.trim() !== "")
-        .map(
-          (l): IngredientDuPlat => ({
-            nom: l.nom.trim(),
-            quantite: lireQuantite(l.quantite),
-            unite: l.unite.trim() || null,
-          })
-        ),
+      ingredients: ingredientsSaisis(),
     }
 
     if (plat) {
@@ -184,38 +241,6 @@ function Formulaire({
             options={TAGS.map((t) => ({ valeur: t as string, libelle: LIBELLE_TAG[t]! }))}
           />
         </div>
-      </Groupe>
-
-      <Groupe titre="Pour une portion">
-        <Stepper libelle="Calories" valeur={kcal} unite="kcal" pas={10} min={0} max={3000} onChange={setKcal} />
-        <Stepper libelle="Protéines" valeur={proteines} unite="g" pas={1} min={0} max={300} onChange={setProteines} />
-        <Filtres
-          libelle="Lipides et glucides"
-          valeur={detail ? "oui" : "non"}
-          onChange={(v) => setDetail(v === "oui")}
-          options={[
-            { valeur: "non", libelle: "Sans lipides ni glucides" },
-            { valeur: "oui", libelle: "Les préciser" },
-          ]}
-        />
-        {detail && (
-          <>
-            <Stepper compact libelle="Lipides" valeur={lipides} unite="g" pas={1} min={0} max={300} onChange={setLipides} />
-            <Stepper compact libelle="Glucides" valeur={glucides} unite="g" pas={1} min={0} max={500} onChange={setGlucides} />
-          </>
-        )}
-        <Filtres
-          libelle="Temps de préparation"
-          valeur={avecTemps ? "oui" : "non"}
-          onChange={(v) => setAvecTemps(v === "oui")}
-          options={[
-            { valeur: "non", libelle: "Sans temps de préparation" },
-            { valeur: "oui", libelle: "Le préciser" },
-          ]}
-        />
-        {avecTemps && (
-          <Stepper compact libelle="Préparation" valeur={temps} unite="min" pas={5} min={0} max={600} onChange={setTemps} />
-        )}
       </Groupe>
 
       <Groupe titre="Ingrédients" aide="Ils alimentent la liste de courses. La quantité est facultative.">
@@ -278,6 +303,56 @@ function Formulaire({
         </Button>
       </Groupe>
 
+      <Groupe titre="Pour une portion">
+        <Button variant="outline" className="h-12 w-full gap-2 text-base" onClick={recalculer}>
+          <Calculator className="size-5" aria-hidden="true" />
+          Recalculer d&apos;après les ingrédients
+        </Button>
+        <Button
+          variant="outline"
+          className="h-12 w-full gap-2 text-base"
+          disabled={assistant.etat === "calcul"}
+          onClick={() => void recalculerAvecAssistant()}
+        >
+          <Sparkles className="size-5" aria-hidden="true" />
+          {assistant.etat === "calcul" ? "L'assistant calcule…" : "Recalculer avec l'assistant"}
+        </Button>
+        {assistant.etat === "repos" ? (
+          <ResultatEstimation estimation={estimation} />
+        ) : (
+          <ResultatAssistant assistant={assistant} />
+        )}
+        <Stepper libelle="Calories" valeur={kcal} unite="kcal" pas={10} min={0} max={3000} onChange={setKcal} />
+        <Stepper libelle="Protéines" valeur={proteines} unite="g" pas={1} min={0} max={300} onChange={setProteines} />
+        <Filtres
+          libelle="Lipides et glucides"
+          valeur={detail ? "oui" : "non"}
+          onChange={(v) => setDetail(v === "oui")}
+          options={[
+            { valeur: "non", libelle: "Sans lipides ni glucides" },
+            { valeur: "oui", libelle: "Les préciser" },
+          ]}
+        />
+        {detail && (
+          <>
+            <Stepper compact libelle="Lipides" valeur={lipides} unite="g" pas={1} min={0} max={300} onChange={setLipides} />
+            <Stepper compact libelle="Glucides" valeur={glucides} unite="g" pas={1} min={0} max={500} onChange={setGlucides} />
+          </>
+        )}
+        <Filtres
+          libelle="Temps de préparation"
+          valeur={avecTemps ? "oui" : "non"}
+          onChange={(v) => setAvecTemps(v === "oui")}
+          options={[
+            { valeur: "non", libelle: "Sans temps de préparation" },
+            { valeur: "oui", libelle: "Le préciser" },
+          ]}
+        />
+        {avecTemps && (
+          <Stepper compact libelle="Préparation" valeur={temps} unite="min" pas={5} min={0} max={600} onChange={setTemps} />
+        )}
+      </Groupe>
+
       <Groupe titre="Recette" aide="Facultatif. Une étape par ligne ; commence une ligne par un tiret pour faire une liste.">
         <Label htmlFor="recette-plat" className="sr-only">
           Recette
@@ -299,5 +374,84 @@ function Formulaire({
         </Button>
       </div>
     </>
+  )
+}
+
+type EtatAssistant =
+  | { etat: "repos" }
+  | { etat: "calcul" }
+  | { etat: "erreur"; message: string }
+  | { etat: "fait"; kcal: number; proteines: number; hypotheses: string[]; rien: boolean }
+
+function ResultatAssistant({ assistant }: { assistant: Exclude<EtatAssistant, { etat: "repos" }> }) {
+  if (assistant.etat === "calcul") {
+    return (
+      <p role="status" className="animate-pulse rounded-2xl bg-muted px-4 py-3 text-sm motion-reduce:animate-none">
+        L&apos;assistant estime le plat d&apos;après ses ingrédients…
+      </p>
+    )
+  }
+  if (assistant.etat === "erreur") {
+    return (
+      <p role="alert" className="rounded-2xl bg-danger-soft px-4 py-3 text-sm leading-snug font-medium text-danger">
+        {assistant.message}
+      </p>
+    )
+  }
+  return (
+    <div role="status" className="space-y-1 rounded-2xl bg-muted px-4 py-3 text-sm leading-snug">
+      <p className="font-medium">
+        {assistant.rien
+          ? "L'assistant n'a rien pu estimer : les valeurs n'ont pas changé."
+          : `Estimation de l'assistant : ${assistant.kcal} kcal et ${assistant.proteines} g de protéines.`}
+      </p>
+      {assistant.hypotheses.length > 0 && (
+        <>
+          <p className="text-muted-foreground">Ce qu&apos;il a supposé :</p>
+          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+            {assistant.hypotheses.map((hypothese) => (
+              <li key={hypothese}>{hypothese}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
+  )
+}
+
+const RAISON = { inconnu: "inconnu de la table", "sans quantité": "sans quantité", "unité inconnue": "unité non reconnue" }
+
+function ResultatEstimation({ estimation }: { estimation: Estimation | null }) {
+  if (!estimation) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Le premier calcul est immédiat : il additionne les ingrédients ci-dessus qui ont une quantité, d&apos;après
+        une table d&apos;aliments courants. L&apos;assistant, lui, estime aussi ce qui n&apos;est pas chiffré ou pas
+        dans la table. Dans les deux cas, tu peux ajuster à la main.
+      </p>
+    )
+  }
+  const total = estimation.comptes.length + estimation.ignores.length
+  const rien = estimation.kcal === 0 && estimation.proteines === 0
+  return (
+    <div role="status" className="space-y-1 rounded-2xl bg-muted px-4 py-3 text-sm leading-snug">
+      {total === 0 ? (
+        <p className="font-medium">Ajoute d&apos;abord des ingrédients avec leur quantité.</p>
+      ) : rien ? (
+        <p className="font-medium">Aucun ingrédient n&apos;a pu être compté : les valeurs n&apos;ont pas changé.</p>
+      ) : (
+        <p className="font-medium">
+          Estimation : {estimation.kcal} kcal et {estimation.proteines} g de protéines, d&apos;après{" "}
+          {estimation.comptes.length} ingrédient{estimation.comptes.length > 1 ? "s" : ""} sur {total}.
+        </p>
+      )}
+      {estimation.ignores.length > 0 && (
+        <p className="text-muted-foreground">
+          Non compté{estimation.ignores.length > 1 ? "s" : ""} :{" "}
+          {estimation.ignores.map((i) => `${i.nom} (${RAISON[i.raison]})`).join(", ")}. Ajoute ce qu&apos;ils
+          apportent à la main.
+        </p>
+      )}
+    </div>
   )
 }

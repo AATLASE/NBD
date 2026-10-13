@@ -77,11 +77,6 @@ export default function DetailRecette() {
         </header>
       </div>
 
-      <Button variant="outline" className="h-12 w-full gap-2 text-base font-semibold" onClick={() => setEdition(true)}>
-        <Pencil className="size-4" aria-hidden="true" />
-        Modifier le plat
-      </Button>
-
       <div className="grid grid-cols-2 gap-3">
         <Stat libelle="Énergie" valeur={plat.kcal} unite="kcal" />
         <Stat libelle="Protéines" valeur={plat.proteines_g} unite="g" />
@@ -132,10 +127,16 @@ export default function DetailRecette() {
         )}
       </Section>
 
-      <Button variant="destructive" className="h-12 w-full gap-2 text-base" disabled={enCours} onClick={supprimer}>
-        <Trash2 className="size-5" aria-hidden="true" />
-        Supprimer ce plat
-      </Button>
+      <div className="space-y-2">
+        <Button variant="outline" className="h-12 w-full gap-2 text-base font-semibold" onClick={() => setEdition(true)}>
+          <Pencil className="size-4" aria-hidden="true" />
+          Modifier le plat
+        </Button>
+        <Button variant="destructive" className="h-12 w-full gap-2 text-base" disabled={enCours} onClick={supprimer}>
+          <Trash2 className="size-5" aria-hidden="true" />
+          Supprimer ce plat
+        </Button>
+      </div>
 
       <EditeurPlat plat={plat} ouvert={edition} onFermer={() => setEdition(false)} />
     </>
