@@ -1,6 +1,6 @@
 "use client"
 
-import { Calculator, Plus, Sparkles, Trash2 } from "lucide-react"
+import { Calculator, Plus, Trash2 } from "lucide-react"
 import { useState } from "react"
 
 import { Stepper } from "@/components/execution/stepper"
@@ -104,7 +104,6 @@ function Formulaire({
   const [recette, setRecette] = useState(plat?.recette_md ?? "")
   const [compteur, setCompteur] = useState(1000)
   const [estimation, setEstimation] = useState<Estimation | null>(null)
-  const [assistant, setAssistant] = useState<EtatAssistant>({ etat: "repos" })
 
   const nomValide = nom.trim().length >= 2
 
@@ -117,7 +116,6 @@ function Formulaire({
   // valeurs. Elles restent modifiables à la main : c'est une estimation, parfois partielle.
   function recalculer() {
     const resultat = estimerPlat(ingredientsSaisis())
-    setAssistant({ etat: "repos" })
     setEstimation(resultat)
     if (resultat.kcal === 0 && resultat.proteines === 0) return
     setKcal(Math.min(3000, resultat.kcal))
@@ -125,52 +123,6 @@ function Formulaire({
   }
   const changerIngredient = (cle: number, champ: Partial<LigneIngredient>) =>
     setIngredients((lignes) => lignes.map((l) => (l.cle === cle ? { ...l, ...champ } : l)))
-
-  // La même estimation, demandée à l'assistant : il compte aussi ce qui n'a pas de quantité ou
-  // n'est pas dans la table, et dit ce qu'il a supposé. Rien n'est enregistré à ce stade.
-  async function recalculerAvecAssistant() {
-    const liste = ingredientsSaisis()
-    setEstimation(null)
-    if (liste.length === 0) {
-      setAssistant({ etat: "erreur", message: "Ajoute d'abord au moins un ingrédient." })
-      return
-    }
-    if (!navigator.onLine) {
-      setAssistant({
-        etat: "erreur",
-        message: "Hors ligne : l'assistant a besoin du réseau. Le calcul d'après les ingrédients, lui, fonctionne.",
-      })
-      return
-    }
-    setAssistant({ etat: "calcul" })
-    try {
-      const reponse = await fetch("/api/plat/estimation", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ nom: nom.trim(), ingredients: liste, recette: recette.trim() || null }),
-      })
-      const corps = (await reponse.json().catch(() => null)) as {
-        ok?: boolean
-        message?: string
-        estimation?: { kcal: number; proteines_g: number; lipides_g: number; glucides_g: number; hypotheses: string[] }
-      } | null
-      if (!reponse.ok || !corps?.ok || !corps.estimation) {
-        setAssistant({ etat: "erreur", message: corps?.message ?? "L'assistant ne répond pas. Réessaie." })
-        return
-      }
-      const e = corps.estimation
-      const rien = e.kcal === 0 && e.proteines_g === 0
-      if (!rien) {
-        setKcal(e.kcal)
-        setProteines(e.proteines_g)
-        setLipides(e.lipides_g)
-        setGlucides(e.glucides_g)
-      }
-      setAssistant({ etat: "fait", kcal: e.kcal, proteines: e.proteines_g, hypotheses: e.hypotheses, rien })
-    } catch {
-      setAssistant({ etat: "erreur", message: "Pas de réseau. L'assistant n'a pas pu répondre." })
-    }
-  }
 
   async function enregistrer() {
     const champs: ChampsPlat = {
@@ -308,20 +260,7 @@ function Formulaire({
           <Calculator className="size-5" aria-hidden="true" />
           Recalculer d&apos;après les ingrédients
         </Button>
-        <Button
-          variant="outline"
-          className="h-12 w-full gap-2 text-base"
-          disabled={assistant.etat === "calcul"}
-          onClick={() => void recalculerAvecAssistant()}
-        >
-          <Sparkles className="size-5" aria-hidden="true" />
-          {assistant.etat === "calcul" ? "L'assistant calcule…" : "Recalculer avec l'assistant"}
-        </Button>
-        {assistant.etat === "repos" ? (
-          <ResultatEstimation estimation={estimation} />
-        ) : (
-          <ResultatAssistant assistant={assistant} />
-        )}
+        <ResultatEstimation estimation={estimation} />
         <Stepper libelle="Calories" valeur={kcal} unite="kcal" pas={10} min={0} max={3000} onChange={setKcal} />
         <Stepper libelle="Protéines" valeur={proteines} unite="g" pas={1} min={0} max={300} onChange={setProteines} />
         <Filtres
@@ -377,57 +316,14 @@ function Formulaire({
   )
 }
 
-type EtatAssistant =
-  | { etat: "repos" }
-  | { etat: "calcul" }
-  | { etat: "erreur"; message: string }
-  | { etat: "fait"; kcal: number; proteines: number; hypotheses: string[]; rien: boolean }
-
-function ResultatAssistant({ assistant }: { assistant: Exclude<EtatAssistant, { etat: "repos" }> }) {
-  if (assistant.etat === "calcul") {
-    return (
-      <p role="status" className="animate-pulse rounded-2xl bg-muted px-4 py-3 text-sm motion-reduce:animate-none">
-        L&apos;assistant estime le plat d&apos;après ses ingrédients…
-      </p>
-    )
-  }
-  if (assistant.etat === "erreur") {
-    return (
-      <p role="alert" className="rounded-2xl bg-danger-soft px-4 py-3 text-sm leading-snug font-medium text-danger">
-        {assistant.message}
-      </p>
-    )
-  }
-  return (
-    <div role="status" className="space-y-1 rounded-2xl bg-muted px-4 py-3 text-sm leading-snug">
-      <p className="font-medium">
-        {assistant.rien
-          ? "L'assistant n'a rien pu estimer : les valeurs n'ont pas changé."
-          : `Estimation de l'assistant : ${assistant.kcal} kcal et ${assistant.proteines} g de protéines.`}
-      </p>
-      {assistant.hypotheses.length > 0 && (
-        <>
-          <p className="text-muted-foreground">Ce qu&apos;il a supposé :</p>
-          <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
-            {assistant.hypotheses.map((hypothese) => (
-              <li key={hypothese}>{hypothese}</li>
-            ))}
-          </ul>
-        </>
-      )}
-    </div>
-  )
-}
-
 const RAISON = { inconnu: "inconnu de la table", "sans quantité": "sans quantité", "unité inconnue": "unité non reconnue" }
 
 function ResultatEstimation({ estimation }: { estimation: Estimation | null }) {
   if (!estimation) {
     return (
       <p className="text-sm text-muted-foreground">
-        Le premier calcul est immédiat : il additionne les ingrédients ci-dessus qui ont une quantité, d&apos;après
-        une table d&apos;aliments courants. L&apos;assistant, lui, estime aussi ce qui n&apos;est pas chiffré ou pas
-        dans la table. Dans les deux cas, tu peux ajuster à la main.
+        Le calcul additionne les ingrédients ci-dessus qui ont une quantité, d&apos;après une table d&apos;aliments
+        courants. Tu peux ensuite ajuster à la main.
       </p>
     )
   }

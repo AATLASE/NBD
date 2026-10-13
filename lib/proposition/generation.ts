@@ -47,32 +47,18 @@ Ses réponses au questionnaire d'accueil et ses cibles quotidiennes te sont donn
 
 Écris tout en français. \`conseils\` tient en deux ou trois phrases adressées à la personne, en la tutoyant.`
 
-// Ce qui change d'une demande à l'autre : la place laissée à la réponse et les messages d'échec.
-export type ReglagesGeneration = {
-  maxTokens: number
-  textes: { refus: string; coupee: string; incomplete: string; illisible: string; nonConfiguree: string }
-}
+const REFUS = { ok: false, message: "La proposition n'a pas pu être générée pour ce profil." } as const
+const COUPEE = {
+  ok: false,
+  message: "La proposition était trop longue et a été coupée. Réessaie.",
+} as const
 
-const PROPOSITION: ReglagesGeneration = {
-  maxTokens: 32000,
-  textes: {
-    refus: "La proposition n'a pas pu être générée pour ce profil.",
-    coupee: "La proposition était trop longue et a été coupée. Réessaie.",
-    incomplete: "La proposition reçue était incomplète. Réessaie.",
-    illisible: "La proposition reçue était illisible. Réessaie.",
-    nonConfiguree: "La proposition automatique n'est pas encore configurée sur ce serveur.",
-  },
-}
-
-export async function generer<Schema extends z.ZodType>(
+async function generer<Schema extends z.ZodType>(
   schema: Schema,
   consigne: string,
-  donnees: unknown,
-  reglages: ReglagesGeneration = PROPOSITION
+  donnees: unknown
 ): Promise<Generation<z.infer<Schema>>> {
   const client = new Anthropic()
-  const REFUS = { ok: false, message: reglages.textes.refus } as const
-  const COUPEE = { ok: false, message: reglages.textes.coupee } as const
   // Raison d'arrêt relevée pendant le flux. Sur une réponse coupée ou refusée, le SDK échoue en
   // lisant le JSON incomplet avant de rendre le message : sans ce relevé, la cause serait perdue.
   let arret: string | null = null
@@ -81,7 +67,7 @@ export async function generer<Schema extends z.ZodType>(
     // En flux : une réponse longue ne se heurte pas aux délais d'attente HTTP.
     const flux = client.beta.messages.stream({
       model: MODELE,
-      max_tokens: reglages.maxTokens,
+      max_tokens: 32000,
       thinking: { type: "adaptive" },
       output_config: { effort: "medium", format: betaZodOutputFormat(schema) },
       // Si la requête est refusée par un filtre de sécurité, l'API la rejoue sur le modèle de
@@ -102,7 +88,7 @@ export async function generer<Schema extends z.ZodType>(
     const texte = message.content.find((bloc) => bloc.type === "text")?.text
     const resultat = schema.safeParse(texte ? JSON.parse(texte) : null)
     if (!resultat.success) {
-      return { ok: false, message: reglages.textes.incomplete }
+      return { ok: false, message: "La proposition reçue était incomplète. Réessaie." }
     }
     return { ok: true, proposition: resultat.data }
   } catch (erreur) {
@@ -121,7 +107,7 @@ export async function generer<Schema extends z.ZodType>(
       return { ok: false, message: "L'assistant a rencontré une erreur. Réessaie." }
     }
     if (erreur instanceof SyntaxError) {
-      return { ok: false, message: reglages.textes.illisible }
+      return { ok: false, message: "La proposition reçue était illisible. Réessaie." }
     }
     // Reste une erreur levée avant tout échange avec l'API. Sans identifiants dans
     // l'environnement, c'est qu'il n'y en a pas : la génération n'est pas configurée.
@@ -130,7 +116,7 @@ export async function generer<Schema extends z.ZodType>(
       ok: false,
       message: identifiants
         ? "L'assistant a rencontré une erreur inattendue. Réessaie."
-        : reglages.textes.nonConfiguree,
+        : "La proposition automatique n'est pas encore configurée sur ce serveur.",
     }
   }
 }
