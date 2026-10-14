@@ -1432,6 +1432,21 @@ export async function enregistrerSeance(seance: SeanceAEnregistrer): Promise<Res
   return { ok: true, changeLogId: data }
 }
 
+// Séance saisie après coup depuis le calendrier : même écriture que le mode exécution, mais le
+// résultat porte son groupe d'historique, pour que le bandeau propose de l'annuler.
+export async function enregistrerSeanceApresCoup(seance: SeanceAEnregistrer): Promise<ResultatEdition> {
+  const resultat = await enregistrerSeance(seance)
+  if (!resultat.ok) return { ok: false, message: "Enregistrement impossible. Vérifie ta connexion et réessaie." }
+  const supabase = await createClient()
+  const { data } = await supabase
+    .from("change_log")
+    .select("groupe_id, resume")
+    .eq("id", resultat.changeLogId)
+    .maybeSingle()
+  if (!data) return { ok: false, message: "Séance enregistrée, mais introuvable dans l'historique. Recharge la page." }
+  return { ok: true, groupeId: data.groupe_id, resume: data.resume }
+}
+
 // --- Paramètres : profil et objectifs ---------------------------------------------------------
 
 const listeDe =
@@ -1665,6 +1680,22 @@ export async function appliquerProposition(messageId: string, effetId: string): 
   if (!proposition) return INTROUVABLE
   const { donnees, effet } = proposition
   if (effet.statut !== "en_attente") return DEJA_REPONDU
+
+  // Séance ou série faite : c'est un relevé, pas le programme, il ne compte pas dans le quota.
+  if (effet.seance) {
+    const { data: groupeId, error } = await supabase.rpc("enregistrer_seance_passee", effet.seance)
+    if (error || !groupeId) {
+      return {
+        ok: false,
+        message: "Cette séance ne peut plus être enregistrée : les données ont changé depuis. Redemande-la à l'assistant.",
+      }
+    }
+    effet.statut = "appliquee"
+    effet.groupeId = groupeId
+    await noterReponse(supabase, messageId, donnees)
+    return { ok: true, groupeId, resume: effet.resume }
+  }
+
   // Mêmes limites qu'au moment de la proposition : le message enregistré ne fait pas foi à lui seul.
   if (!Array.isArray(effet.changements) || effet.changements.length === 0) return INVALIDE
   if (effet.changements.some((c) => !TABLES_DU_CHAT.includes(c.table))) return INVALIDE

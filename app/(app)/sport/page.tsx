@@ -102,15 +102,15 @@ export default function SportAujourdhui() {
       )}
 
       <Section titre="Séance du jour">
-        {faiteAujourdhui && seanceFaite ? (
+        {faiteAujourdhui ? (
           <Carte className="flex items-center gap-3 p-4">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
               <Check className="size-5" aria-hidden="true" />
             </span>
             <p className="min-w-0">
-              <span className="font-semibold">Séance {seanceFaite.code} faite</span>
+              <span className="font-semibold">{seanceFaite ? `Séance ${seanceFaite.code} faite` : "Séance faite"}</span>
               <span className="block text-sm text-muted-foreground">
-                {seanceFaite.nom}
+                {seanceFaite?.nom ?? "Hors programme"}
                 {faiteAujourdhui.duree_min !== null && ` · ${faiteAujourdhui.duree_min} min`}
               </span>
             </p>

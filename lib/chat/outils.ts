@@ -3,7 +3,14 @@ import "server-only"
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod"
 import { z } from "zod"
 
-import { LIGNES_MAX_DU_CHAT, TABLES_DU_CHAT, type ChangementChat, type Effet, type LigneDiff } from "@/lib/chat/types"
+import {
+  LIGNES_MAX_DU_CHAT,
+  TABLES_DU_CHAT,
+  type ChangementChat,
+  type Effet,
+  type LigneDiff,
+  type SeancePassee,
+} from "@/lib/chat/types"
 import { cleDe, composerListe, type IngredientDePlat } from "@/lib/courses"
 import type { Json } from "@/lib/database.types"
 import { dateCourte, nombre, prescription } from "@/lib/format"
@@ -12,10 +19,9 @@ import type { createClient } from "@/lib/supabase/server"
 
 // Outils du chatbot (SPEC 7.2) et règles appliquées en code (SPEC 7.3 et 7.4).
 //
-// Le modèle propose, ce fichier décide. Pour chaque outil d'écriture, le mode est déterministe :
-//   1 ligne modifiée, sans suppression  -> appliqué tout de suite, annulable
-//   plusieurs lignes, ou une suppression -> proposé : carte avant/après, rien n'est écrit
-//   plus de 5 lignes                     -> refusé, à faire à la main dans l'application
+// Le modèle propose, l'utilisateur décide. Aucune écriture ne part d'office :
+//   jusqu'à 5 lignes      -> proposé : carte avant/après avec « Accepter » et « Refuser »
+//   plus de 5 lignes       -> refusé, à faire à la main dans l'application
 // La limite de 5 lignes vaut pour toute la demande, pas outil par outil : dix suppressions d'une
 // ligne restent une opération de masse.
 // Il n'existe aucun outil pour toucher au protocole pied, au plan de course ou aux objectifs de
@@ -28,14 +34,14 @@ export type Contexte = {
   aujourdhui: string
   alimentsExclus: string[]
   effets: Effet[]
-  // Réservation de quota de ce tour de parole, partagée par toutes ses écritures.
+  // Réservation de quota du message. Elle n'est faite qu'à l'acceptation d'une proposition.
   quota: { demandeIa: string | null }
-  // Modifications du programme faites pendant ce tour de parole : nombre de lignes touchées
-  // (appliquées ou proposées), écritures déjà appliquées, et file d'attente des outils.
-  cumul: { lignes: number; appliquees: string[]; attente: Promise<unknown> }
+  // Modifications du programme proposées pendant ce tour de parole : nombre de lignes touchées,
+  // et file d'attente des outils.
+  cumul: { lignes: number; attente: Promise<unknown> }
 }
 
-export const nouveauCumul = (): Contexte["cumul"] => ({ lignes: 0, appliquees: [], attente: Promise.resolve() })
+export const nouveauCumul = (): Contexte["cumul"] => ({ lignes: 0, attente: Promise.resolve() })
 
 export const QUOTA_CHAT =
   "REFUS : la limite mensuelle de modifications par l'assistant est atteinte pour ce compte. " +
@@ -49,10 +55,6 @@ type Plan = {
   // Lignes du programme concernées, quand ce n'est pas le nombre d'écritures : remplacer un
   // exercice archive une ligne et en crée une autre, mais ne touche qu'une ligne de la séance.
   lignes?: number
-  // Suppression (ou archivage) : toujours proposée, jamais appliquée d'office.
-  destructif?: boolean
-  // Changement de structure d'une séance : proposé même s'il ne touche qu'une ligne.
-  structurel?: boolean
   // Modification du programme ou du plan nutritif : compte dans le quota mensuel.
   quota: boolean
   // La liste de courses est un document dérivé, pas le programme : la limite de 5 lignes ne s'y applique pas.
@@ -60,6 +62,9 @@ type Plan = {
 }
 
 const texte = (valeur: unknown) => JSON.stringify(valeur)
+
+const PROPOSE =
+  "PROPOSÉ, PAS APPLIQUÉ : une carte est affichée à l'utilisateur, avec les boutons « Accepter » et « Refuser ». Rien n'est écrit tant qu'il n'a pas accepté. Ne dis pas que c'est fait : dis que tu proposes et qu'il lui reste à valider."
 
 async function quotaDisponible(c: Contexte) {
   if (c.quota.demandeIa) return true
@@ -76,21 +81,13 @@ function soumettre(c: Contexte, plan: Plan): Promise<string> {
   return resultat
 }
 
-// La demande dépasse la limite : elle est refusée en entier. Ce qui n'était que proposé est retiré,
-// ce qui venait d'être appliqué est annulé, et la demande n'est pas décomptée du quota.
-async function refuserEnMasse(c: Contexte) {
+// La demande dépasse la limite : elle est refusée en entier, et ce qui était déjà proposé est retiré.
+function refuserEnMasse(c: Contexte) {
   for (let i = c.effets.length - 1; i >= 0; i--) {
     const effet = c.effets[i]
-    const aRetirer = effet.type === "propose" ? effet.quota : c.cumul.appliquees.includes(effet.groupeId)
-    if (aRetirer) c.effets.splice(i, 1)
+    if (effet.type === "propose" && effet.quota) c.effets.splice(i, 1)
   }
-  for (const groupeId of c.cumul.appliquees.reverse()) await c.supabase.rpc("annuler_changement", { p_groupe: groupeId })
-  c.cumul.appliquees = []
-  if (c.quota.demandeIa) {
-    await c.supabase.rpc("rendre_demande_ia", { p_id: c.quota.demandeIa })
-    c.quota.demandeIa = null
-  }
-  return `REFUS : cette demande toucherait plus de ${LIGNES_MAX_DU_CHAT} lignes du programme. Une opération de cette taille doit être faite à la main dans l'application. Tout ce que tu avais préparé ou appliqué pour ce message a été retiré : rien n'est affiché, rien n'a changé. Arrête-toi là, explique la règle et propose de procéder par petites étapes.`
+  return `REFUS : cette demande toucherait plus de ${LIGNES_MAX_DU_CHAT} lignes du programme. Une opération de cette taille doit être faite à la main dans l'application. Tout ce que tu avais proposé pour ce message a été retiré : rien n'est affiché, rien n'a changé. Arrête-toi là, explique la règle et propose de procéder par petites étapes.`
 }
 
 async function traiter(c: Contexte, plan: Plan): Promise<string> {
@@ -109,35 +106,16 @@ async function traiter(c: Contexte, plan: Plan): Promise<string> {
   }
   if (plan.quota && !(await quotaDisponible(c))) return QUOTA_CHAT
 
-  const direct = ecritures === 1 && !plan.destructif && !plan.structurel
-  if (!direct) {
-    c.effets.push({
-      type: "propose",
-      id: crypto.randomUUID(),
-      resume: plan.resume,
-      diff: plan.diff,
-      statut: "en_attente",
-      changements: plan.changements,
-      quota: plan.quota,
-    })
-    return "PROPOSÉ, PAS APPLIQUÉ : une carte avant/après est affichée à l'utilisateur, avec les boutons « Appliquer » et « Laisser tomber ». Rien n'est écrit tant qu'il n'a pas appuyé. Ne dis pas que c'est fait : dis que tu proposes et qu'il lui reste à valider."
-  }
-
-  if (plan.quota && !c.quota.demandeIa) {
-    const { data: demande } = await c.supabase.rpc("reserver_demande_ia", { p_type: "chat" })
-    if (!demande) return QUOTA_CHAT
-    c.quota.demandeIa = demande
-  }
-  const { data: groupeId, error } = await c.supabase.rpc("appliquer_changements", {
-    p_changements: plan.changements as unknown as Json,
-    p_resume: plan.resume,
-    p_source: "chatbot",
+  c.effets.push({
+    type: "propose",
+    id: crypto.randomUUID(),
+    resume: plan.resume,
+    diff: plan.diff,
+    statut: "en_attente",
+    changements: plan.changements,
+    quota: plan.quota,
   })
-  if (error || !groupeId) return "ÉCHEC : la modification n'a pas pu être enregistrée. Rien n'a changé."
-
-  if (plan.quota) c.cumul.appliquees.push(groupeId)
-  c.effets.push({ type: "applique", id: crypto.randomUUID(), groupeId, resume: plan.resume })
-  return `APPLIQUÉ. L'utilisateur voit un bouton « Annuler ». Identifiant d'historique : ${groupeId}. ${plan.resume}`
+  return PROPOSE
 }
 
 // --- Lectures communes --------------------------------------------------------------------
@@ -193,6 +171,25 @@ const LIBELLE_REGLAGE: Record<string, string> = {
   note: "Note",
 }
 const lisible = (valeur: unknown) => (valeur === null || valeur === undefined ? "aucun" : String(valeur).replace(".", ","))
+
+type SerieFaite = { charge_kg: number | null; reps: number | null; duree_sec: number | null }
+
+// « 3 × 10 à 40 kg » quand les séries sont identiques, sinon le détail série par série.
+function resumeSeries(series: SerieFaite[]) {
+  const textes = series.map(
+    (s) =>
+      [s.reps !== null ? String(s.reps) : null, s.duree_sec !== null ? `${s.duree_sec} s` : null].filter(Boolean).join(" · ") +
+      (s.charge_kg !== null ? ` à ${nombre(s.charge_kg)} kg` : "")
+  )
+  if (textes.every((t) => t === "")) return `${series.length} série${series.length > 1 ? "s" : ""}`
+  return textes.every((t) => t === textes[0]) ? `${series.length} × ${textes[0]}` : textes.join(" / ")
+}
+
+function parExercice<T extends SerieFaite>(series: { nom: string; serie: T }[]) {
+  const groupes = new Map<string, T[]>()
+  for (const { nom, serie } of series) groupes.set(nom, [...(groupes.get(nom) ?? []), serie])
+  return groupes
+}
 
 // Retrouve un exercice par son nom, ou prépare sa création.
 async function exercicePour(c: Contexte, nom: string, groupe?: string, equipement?: string) {
@@ -272,13 +269,13 @@ export function creerOutils(c: Contexte) {
       run: async ({ exercice, nb_seances }) => {
         const { data } = await db
           .from("workout_logs")
-          .select("date, set_logs(serie_num, charge_kg, reps, duree_sec, rir, workout_exercise:workout_exercises(exercise:exercises(nom)))")
+          .select("date, set_logs(serie_num, charge_kg, reps, duree_sec, rir, exercise:exercises(nom))")
           .order("date", { ascending: false })
           .limit(40)
         const seances = (data ?? [])
           .map((log) => ({
             date: log.date,
-            series: log.set_logs.filter((s) => s.workout_exercise && cleDe(s.workout_exercise.exercise.nom).includes(cleDe(exercice))),
+            series: log.set_logs.filter((s) => cleDe(s.exercise.nom).includes(cleDe(exercice))),
           }))
           .filter((s) => s.series.length > 0)
           .slice(0, nb_seances)
@@ -347,7 +344,6 @@ export function creerOutils(c: Contexte) {
           resume: `${cible.nom} ajouté à la séance ${seance.code}`,
           diff: [{ titre: `Séance ${seance.code}`, avant: null, apres: `${cible.nom} : ${resumeLigne(reglages)}` }],
           lignes: 1,
-          structurel: true,
           quota: true,
         })
       },
@@ -364,7 +360,6 @@ export function creerOutils(c: Contexte) {
           changements: [{ table: "workout_exercises", operation: "update", id: ligne.id, data: { archived: true } }],
           resume: `${ligne.exercise.nom} retiré de la séance ${ligne.workout.code}`,
           diff: [{ titre: `Séance ${ligne.workout.code}`, avant: `${ligne.exercise.nom} : ${resumeLigne(ligne)}`, apres: null }],
-          destructif: true,
           quota: true,
         })
       },
@@ -400,7 +395,6 @@ export function creerOutils(c: Contexte) {
           resume: `${ligne.exercise.nom} remplacé par ${cible.nom} dans la séance ${ligne.workout.code}`,
           diff: [{ titre: `Séance ${ligne.workout.code}, exercice ${ligne.ordre}`, avant: `${ligne.exercise.nom} : ${resumeLigne(ligne)}`, apres: `${cible.nom} : ${resumeLigne(reglages)}` }],
           lignes: 1,
-          structurel: true,
           quota: true,
         })
       },
@@ -428,7 +422,6 @@ export function creerOutils(c: Contexte) {
           resume: `Séance ${seance.code} : ordre des exercices modifié`,
           diff: [{ titre: `Ordre de la séance ${seance.code}`, avant: lignes.map((l) => l.exercise.nom).join(" · "), apres: ordre_ids.map(nom).join(" · ") }],
           lignes: 1,
-          structurel: true,
           quota: true,
         })
       },
@@ -578,21 +571,159 @@ export function creerOutils(c: Contexte) {
       run: async ({ workout_exercise_id, charge_kg, reps }) => {
         const ligne = await lireLigne(c, workout_exercise_id)
         if (!ligne) return "Ligne d'exercice introuvable."
-        const { data: changeId, error } = await db.rpc("enregistrer_seance", {
-          p_id: crypto.randomUUID(),
-          p_workout_id: ligne.workout.id,
-          p_date: c.aujourdhui,
-          // Une série isolée n'a ni durée ni ressenti ; les colonnes acceptent le vide.
-          p_duree_min: null as unknown as number,
-          p_ressenti: null as unknown as number,
-          p_series: [{ workout_exercise_id, serie_num: 1, charge_kg, reps, duree_sec: null, rir: null }],
-          p_source: "chatbot",
+        const resume = `Série du jour : ${ligne.exercise.nom}, ${charge_kg === null ? "" : `${nombre(charge_kg)} kg × `}${reps}`
+        // Une série isolée devient une petite séance du jour, rattachée à la sienne. C'est un relevé : pas de quota.
+        c.effets.push({
+          type: "propose",
+          id: crypto.randomUUID(),
+          resume,
+          diff: [],
+          statut: "en_attente",
+          changements: [],
+          seance: {
+            p_id: crypto.randomUUID(),
+            p_date: c.aujourdhui,
+            p_workout_id: ligne.workout.id,
+            p_series: [
+              { exercise_id: ligne.exercise.id, workout_exercise_id: ligne.id, serie_num: 1, charge_kg, reps, duree_sec: null },
+            ],
+            p_resume: resume,
+          },
+          quota: false,
         })
-        const { data: entree } = changeId ? await db.from("change_log").select("groupe_id").eq("id", changeId).maybeSingle() : { data: null }
-        if (error || !entree) return "ÉCHEC : la série n'a pas pu être enregistrée."
-        const resume = `Série enregistrée : ${ligne.exercise.nom}, ${charge_kg === null ? "" : `${nombre(charge_kg)} kg × `}${reps}`
-        c.effets.push({ type: "applique", id: crypto.randomUUID(), groupeId: entree.groupe_id, resume })
-        return `APPLIQUÉ. ${resume}`
+        return PROPOSE
+      },
+    }),
+
+    betaZodTool({
+      name: "enregistrer_seance",
+      description:
+        "Enregistre une séance faite, avec toutes ses séries, aujourd'hui ou à une date passée (AAAA-MM-JJ). Le programme n'est pas modifié. " +
+        "Les exercices peuvent venir de plusieurs séances du programme, ou d'aucune : reprends le nom exact d'un exercice déjà connu quand c'est le même mouvement ; sinon il est créé, et il faut alors donner son groupe et son équipement. " +
+        "Une entrée de « series » par série faite : « 10 × 3 séries à 40 kg » donne trois entrées de 10 reps à 40 kg. " +
+        "seance_code rattache la séance à une séance du programme (A, B…), seulement si c'est bien celle-là ; sans lui, elle est enregistrée hors programme. " +
+        "Pour remplacer une séance déjà enregistrée, passe son identifiant (dans l'état ou via get_logs) dans remplace_id : l'ancienne et ses séries sont retirées.",
+      inputSchema: z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        seance_code: z.string().min(1).max(8).nullable().optional(),
+        remplace_id: z.uuid().nullable().optional(),
+        duree_min: z.number().int().min(1).max(600).nullable().optional(),
+        note: z.string().max(300).nullable().optional(),
+        exercices: z
+          .array(
+            z.object({
+              nom: z.string().min(2).max(60),
+              groupe: z.enum(GROUPES).optional(),
+              equipement: z.enum(EQUIPEMENTS).optional(),
+              series: z
+                .array(
+                  z.object({
+                    charge_kg: z.number().min(0).max(1000).nullable(),
+                    reps: z.number().int().min(0).max(999).nullable(),
+                    duree_sec: z.number().int().min(1).max(3600).nullable().optional(),
+                  })
+                )
+                .min(1)
+                .max(20),
+            })
+          )
+          .min(1)
+          .max(20),
+      }),
+      run: async ({ date, seance_code, remplace_id, duree_min, note, exercices }) => {
+        if (date > c.aujourdhui) return "REFUS : une séance ne s'enregistre pas à une date future."
+        const seance = seance_code ? await lireSeance(c, { code: seance_code }) : null
+        if (seance_code && !seance) return `Aucune séance avec le code ${seance_code}. Enregistre-la hors programme, sans seance_code.`
+
+        const [{ data: connus }, { data: ancienne }] = await Promise.all([
+          db.from("exercises").select("id, nom").not("archived", "is", true),
+          remplace_id
+            ? db
+                .from("workout_logs")
+                .select("id, date, workout:workouts(code), set_logs(serie_num, charge_kg, reps, duree_sec, exercise:exercises(nom))")
+                .eq("id", remplace_id)
+                .order("serie_num", { referencedTable: "set_logs" })
+                .maybeSingle()
+            : Promise.resolve({ data: null }),
+        ])
+        if (remplace_id && !ancienne) return "Séance à remplacer introuvable. Relis les séances faites avec get_logs."
+
+        // Un mouvement cité deux fois n'est créé qu'une fois.
+        const parCle = new Map((connus ?? []).map((e) => [cleDe(e.nom), e]))
+        const nouveaux: { id: string; nom: string; groupe: string; equipement: string }[] = []
+        const sansGroupe: string[] = []
+        const series: (SerieFaite & { exercise_id: string; workout_exercise_id: string | null; serie_num: number })[] = []
+        const faites: { nom: string; serie: SerieFaite }[] = []
+        for (const exercice of exercices) {
+          const cle = cleDe(exercice.nom)
+          if (!parCle.has(cle)) {
+            if (!exercice.groupe || !exercice.equipement) {
+              sansGroupe.push(exercice.nom)
+              continue
+            }
+            const nouveau = { id: crypto.randomUUID(), nom: exercice.nom.trim().slice(0, 60) }
+            nouveaux.push({ ...nouveau, groupe: exercice.groupe, equipement: exercice.equipement })
+            parCle.set(cle, nouveau)
+          }
+          const cible = parCle.get(cle)!
+          const ligne = seance?.workout_exercises.find((l) => l.exercise.id === cible.id)
+          const deja = series.filter((s) => s.exercise_id === cible.id).length
+          exercice.series.forEach((s, i) => {
+            const serie = { charge_kg: s.charge_kg, reps: s.reps, duree_sec: s.duree_sec ?? null }
+            series.push({ ...serie, exercise_id: cible.id, workout_exercise_id: ligne?.id ?? null, serie_num: deja + i + 1 })
+            faites.push({ nom: cible.nom, serie })
+          })
+        }
+        if (sansGroupe.length > 0) {
+          return `Rien n'est enregistré. Exercices nouveaux pour l'utilisateur : ${sansGroupe.join(", ")}. Rappelle l'outil en donnant groupe et equipement pour chacun.`
+        }
+
+        const nombreExercices = new Set(series.map((s) => s.exercise_id)).size
+        const libelle = seance ? `séance ${seance.code}` : "hors programme"
+        const contenu = `${nombreExercices} exercice${nombreExercices > 1 ? "s" : ""}, ${series.length} série${series.length > 1 ? "s" : ""}`
+        const resume = `Séance du ${dateCourte(date)} ${ancienne ? "remplacée" : "enregistrée"} (${libelle}) : ${contenu}`
+        const args: SeancePassee = {
+          p_id: crypto.randomUUID(),
+          p_date: date,
+          p_series: series as unknown as Json,
+          p_resume: resume,
+          p_workout_id: seance?.id,
+          p_duree_min: duree_min ?? undefined,
+          p_note: note ?? undefined,
+          p_exercices: nouveaux as unknown as Json,
+          p_remplace: ancienne?.id,
+        }
+
+        // Proposé avec l'avant (s'il y en a un) et l'après, exercice par exercice. C'est un relevé : pas de quota.
+        const avant = parExercice((ancienne?.set_logs ?? []).map((s) => ({ nom: s.exercise.nom, serie: s })))
+        const apres = parExercice(faites)
+        const noms = [...new Set([...avant.keys(), ...apres.keys()])]
+        c.effets.push({
+          type: "propose",
+          id: crypto.randomUUID(),
+          resume,
+          diff: [
+            ...(ancienne
+              ? [
+                  {
+                    titre: `Séance du ${dateCourte(ancienne.date)}`,
+                    avant: `${ancienne.workout ? `Séance ${ancienne.workout.code}` : "Hors programme"}, ${ancienne.set_logs.length} série${ancienne.set_logs.length > 1 ? "s" : ""}`,
+                    apres: `${seance ? `Séance ${seance.code}` : "Hors programme"}, ${series.length} série${series.length > 1 ? "s" : ""}`,
+                  },
+                ]
+              : []),
+            ...noms.map((nom) => ({
+              titre: nom,
+              avant: avant.has(nom) ? resumeSeries(avant.get(nom)!) : null,
+              apres: apres.has(nom) ? resumeSeries(apres.get(nom)!) : null,
+            })),
+          ],
+          statut: "en_attente",
+          changements: [],
+          seance: args,
+          quota: false,
+        })
+        return PROPOSE
       },
     }),
 

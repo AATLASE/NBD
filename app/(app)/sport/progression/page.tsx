@@ -94,8 +94,8 @@ export default function Progression() {
   for (const seance of historique.data.toReversed()) {
     const duJour = new Map<string, { charge: number; volume: number }>()
     for (const serie of seance.set_logs) {
-      const exerciceId = serie.workout_exercise?.exercise_id
-      if (!exerciceId || serie.charge_kg === null) continue
+      const exerciceId = serie.exercise_id
+      if (serie.charge_kg === null) continue
       const cumul = duJour.get(exerciceId) ?? { charge: 0, volume: 0 }
       cumul.charge = Math.max(cumul.charge, serie.charge_kg)
       cumul.volume += serie.charge_kg * (serie.reps ?? 0)
@@ -259,12 +259,12 @@ export default function Progression() {
             </div>
             <Releve
               lignes={journal.data.slice(0, DERNIERES).map((log) => {
-                const seance = seanceParId.get(log.workout_id)
+                const seance = log.workout_id ? seanceParId.get(log.workout_id) : undefined
                 return {
                   cle: log.id,
                   libelle: dateCourte(log.date),
                   valeur: [
-                    seance ? `${seance.code} · ${seance.nom}` : "Séance supprimée",
+                    seance ? `${seance.code} · ${seance.nom}` : log.workout_id ? "Séance supprimée" : "Hors programme",
                     log.duree_min !== null ? `${log.duree_min} min` : null,
                   ]
                     .filter(Boolean)

@@ -11,6 +11,7 @@ import { AvatarCoach } from "@/components/coach/avatar"
 import { Attente } from "@/components/etats"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { useAujourdhui } from "@/lib/aujourdhui"
+import { DUREE_DE_VIE_MESSAGE_MS } from "@/lib/chat/types"
 import { COACH, estUnCoach } from "@/lib/coachs"
 import { annoncer, useEdition } from "@/lib/edition"
 import { abandonnerProposition, appliquerProposition } from "@/lib/mutations"
@@ -43,7 +44,24 @@ export default function Chat() {
   const saisie = useRef<HTMLTextAreaElement>(null)
   const fin = useRef<HTMLDivElement>(null)
 
-  const nombre = messages.data?.length ?? 0
+  // Un message disparaît dix minutes après son envoi, même si l'écran reste ouvert : un minuteur
+  // relance l'affichage à chaque échéance.
+  const [maintenant, setMaintenant] = useState(() => Date.now())
+  const visibles = useMemo(
+    () =>
+      messages.data?.filter(
+        (m) => m.created_at !== null && Date.parse(m.created_at) + DUREE_DE_VIE_MESSAGE_MS > maintenant
+      ),
+    [messages.data, maintenant]
+  )
+  useEffect(() => {
+    const echeances = (visibles ?? []).map((m) => Date.parse(m.created_at!) + DUREE_DE_VIE_MESSAGE_MS)
+    if (echeances.length === 0) return
+    const minuteur = setTimeout(() => setMaintenant(Date.now()), Math.max(0, Math.min(...echeances) - Date.now()) + 50)
+    return () => clearTimeout(minuteur)
+  }, [visibles])
+
+  const nombre = visibles?.length ?? 0
   useEffect(() => {
     fin.current?.scrollIntoView({ block: "end" })
   }, [nombre, envoi])
@@ -111,7 +129,7 @@ export default function Chat() {
   }
 
   const limite = quota.data?.limite ?? null
-  const vide = messages.data?.length === 0 && envoi === null
+  const vide = visibles?.length === 0 && envoi === null
 
   return (
     <>
@@ -130,7 +148,7 @@ export default function Chat() {
           />
         </div>
 
-        {!messages.data ? (
+        {!visibles ? (
           <Attente requetes={[messages]} />
         ) : vide ? (
           <div className="space-y-4">
@@ -173,7 +191,7 @@ export default function Chat() {
           </div>
         ) : (
           <div className="space-y-4">
-            {messages.data.map((message) => (
+            {visibles.map((message) => (
               <Message key={message.id} message={message} actions={actions} coach={idCoach} />
             ))}
             {envoi !== null && (

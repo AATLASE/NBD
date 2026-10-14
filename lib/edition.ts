@@ -61,6 +61,7 @@ export const CLES_PROGRAMME = [
   "modifications",
   "journal-seances",
   "historique-series",
+  "series-seance",
   "debut-programme",
   "pied",
   "course",

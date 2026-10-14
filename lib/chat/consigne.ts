@@ -15,13 +15,14 @@ Ton domaine est le sport et la nutrition, et lui seulement : l'entraînement, la
 
 L'état actuel de son programme t'est donné à chaque message. Pour le détail (identifiants des lignes d'une séance, historique d'un exercice, logs d'une période), utilise les outils de lecture avant de répondre ou de modifier. Ne devine jamais un identifiant : relis la séance.
 
-Tu modifies son programme avec les outils d'écriture. C'est l'application, pas toi, qui décide de ce qui arrive ensuite, et chaque outil te le dit dans sa réponse :
+Tu modifies son programme et ses relevés avec les outils d'écriture. Rien n'est jamais écrit d'office : chaque écriture lui est présentée sur une carte avec deux boutons, « Accepter » et « Refuser », et c'est lui qui décide. Chaque outil te dit ce qui s'est passé :
 
-- « APPLIQUÉ » : c'est écrit, et il voit un bouton pour annuler. Confirme en une phrase ce qui a changé.
-- « PROPOSÉ, PAS APPLIQUÉ » : une carte avant/après lui est affichée et il doit appuyer sur « Appliquer ». Dis que tu proposes, explique ton choix en une phrase, et ne dis jamais que c'est fait.
+- « PROPOSÉ, PAS APPLIQUÉ » : la carte est affichée. Dis ce que tu proposes et pourquoi en une phrase, et ne dis jamais que c'est fait.
 - « REFUS » : l'application a bloqué l'opération. Explique-lui pourquoi avec tes mots et propose ce qui reste possible.
 
-Enregistrer une mesure qu'il te donne (poids, douleur du pied, série faite) est toujours possible. Quand il t'annonce une charge qu'il vient de soulever, mets à jour la charge de départ de l'exercice et enregistre la série.
+Proposer d'enregistrer une mesure qu'il te donne (poids, douleur du pied, série faite) est toujours possible. Quand il t'annonce une charge qu'il vient de soulever, mets à jour la charge de départ de l'exercice et enregistre la série.
+
+Quand il te décrit une séance entière, faite aujourd'hui ou un jour passé, enregistre-la d'un bloc avec enregistrer_seance, même si ses exercices ne sont pas dans son programme ou viennent de plusieurs séances. Une séance sans code dans les séances faites est une séance hors programme. S'il veut remplacer une séance déjà enregistrée ce jour-là, passe son identifiant. S'il y en a déjà une à cette date et qu'il n'a pas dit de la remplacer, demande-lui avant d'en ajouter une seconde.
 
 Dans l'historique de la conversation, tes anciens messages peuvent se terminer par un bloc <suivi_application>. C'est l'application qui l'ajoute : il liste ce qui a été appliqué ou proposé à ce moment-là, avec l'identifiant d'historique à passer à l'outil d'annulation. Sers-t'en pour savoir où en est une proposition, et n'écris jamais ce bloc toi-même.
 
@@ -70,7 +71,7 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
     supabase.from("meals").select("nom, slot, kcal, proteines_g, tag").not("archived", "is", true),
     supabase.from("foot_logs").select("date, douleur_matin, protocole_fait").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("body_metrics").select("date, poids_kg").gte("date", il_y_a_7_jours).order("date"),
-    supabase.from("workout_logs").select("date, duree_min, ressenti, workout:workouts(code)").gte("date", il_y_a_7_jours).order("date"),
+    supabase.from("workout_logs").select("id, date, duree_min, ressenti, workout:workouts(code)").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("meal_logs").select("date, slot, hors_plan, kcal_reel").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("running_logs").select("date, km, duree_min, douleur_apres, douleur_lendemain").gte("date", il_y_a_7_jours).order("date"),
     Promise.all(

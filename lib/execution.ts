@@ -78,7 +78,7 @@ export function seancesDeLExercice(historique: SeanceFaite[], exerciseId: string
     .map((seance) => ({
       id: seance.id,
       date: seance.date,
-      series: seance.set_logs.filter((s) => s.workout_exercise?.exercise_id === exerciseId),
+      series: seance.set_logs.filter((s) => s.exercise_id === exerciseId),
     }))
     .filter((seance) => seance.series.length > 0)
     .slice(0, combien)

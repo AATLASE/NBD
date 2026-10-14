@@ -1,56 +1,89 @@
 "use client"
 
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  pointerWithin,
-  useDraggable,
-  useDroppable,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core"
 import { cn } from "cn"
-import { GripVertical } from "lucide-react"
+import { Check, ChevronRight, Plus } from "lucide-react"
 import { useState } from "react"
 
-import { Carte, EnTete, Etiquette } from "@/components/blocs"
+import { Carte, EnTete, Etiquette, Section } from "@/components/blocs"
+import { Calendrier, premierDuMois, type Marque } from "@/components/calendrier"
 import { Attente } from "@/components/etats"
 import { LienHistorique } from "@/components/lien-historique"
 import { EditeurCase } from "@/components/nutrition/editeur-case"
-import { Filtres } from "@/components/nutrition/repas"
+import { FeuilleHorsPlan } from "@/components/nutrition/hors-plan"
+import { macros } from "@/components/nutrition/repas"
+import { Button } from "@/components/ui/button"
 import { useAujourdhui } from "@/lib/aujourdhui"
+import type { Tables } from "@/lib/database.types"
 import { useEdition } from "@/lib/edition"
-import { jourDe } from "@/lib/format"
-import { JOURS, LIBELLE_SLOT, SLOTS, majuscule } from "@/lib/libelles"
-import { echangerRepas, remplacerRepas } from "@/lib/mutations"
-import { useDebutProgramme, usePlanRepas, useRepas, type CasePlan } from "@/lib/queries"
+import { differable } from "@/lib/file-attente"
+import { dateLongue, jourDe } from "@/lib/format"
+import { JOURS, LIBELLE_SLOT, SLOTS, majuscule, type Slot } from "@/lib/libelles"
+import { echangerRepas, remplacerRepas, retirerRepas } from "@/lib/mutations"
+import { useDebutProgramme, useJournalRepas, usePlanRepas, useRepas, type CasePlan, type Repas } from "@/lib/queries"
 import { semaineMenu, semaineProgramme } from "@/lib/regles"
 
-type Semaine = "1" | "2"
+type Log = Tables<"meal_logs">
 
 export default function Menus() {
   const aujourdhui = useAujourdhui()
   const plan = usePlanRepas()
   const repas = useRepas()
+  const journal = useJournalRepas()
   const debut = useDebutProgramme()
   const { executer } = useEdition()
-  const [choix, setChoix] = useState<Semaine | null>(null)
+  const [dateChoisie, setDateChoisie] = useState<string | null>(null)
+  const [mois, setMois] = useState<string | null>(null)
   const [caseOuverte, setCaseOuverte] = useState<string | null>(null)
-  const [caseGlissee, setCaseGlissee] = useState<CasePlan | null>(null)
+  const [horsPlan, setHorsPlan] = useState(false)
 
-  const capteurs = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
-
-  if (!aujourdhui || !plan.data || debut.data === undefined) {
-    return <Attente requetes={[plan, debut]} />
+  if (!aujourdhui || !plan.data || !journal.data || debut.data === undefined) {
+    return <Attente requetes={[plan, journal, debut]} />
   }
 
-  const semaineEnCours = String(semaineMenu(semaineProgramme(debut.data, aujourdhui).brute)) as Semaine
-  const semaine = choix ?? semaineEnCours
-  const jourActuel = jourDe(aujourdhui)
-  const cases = plan.data.filter((c) => String(c.semaine) === semaine)
-  const ouverte = cases.find((c) => c.id === caseOuverte) ?? null
+  // Le plan tourne sur deux semaines : une date tombe dans la semaine 1 ou 2 des menus.
+  const semaineDe = (date: string) => semaineMenu(semaineProgramme(debut.data, date).brute)
+  const casesDu = (date: string) =>
+    plan.data.filter((c) => c.semaine === semaineDe(date) && c.jour === jourDe(date))
+  const notes = new Set(journal.data.map((log) => log.date))
+
+  const date = dateChoisie ?? aujourdhui
+  const semaine = semaineDe(date)
+  const jour = jourDe(date)
+  const cases = casesDu(date)
+  const logs = journal.data.filter((log) => log.date === date)
+  const ouverte = plan.data.find((c) => c.id === caseOuverte) ?? null
+  // On note ce qu'on a mangé jusqu'à aujourd'hui, jamais à l'avance.
+  const notable = date <= aujourdhui
+  const slotsLibres = SLOTS.filter((slot) => !logs.some((l) => l.slot === slot))
+
+  const dansLeJournal = (maj: (logs: Log[]) => Log[]) => ({ cle: ["journal-repas"], maj })
+
+  function cocher(slot: Slot, plat: Repas) {
+    const provisoire: Log = {
+      id: `provisoire-${slot}`,
+      user_id: "",
+      date,
+      slot,
+      meal_id: plat.id,
+      kcal_reel: null,
+      proteines_reel: null,
+      hors_plan: false,
+      note: null,
+    }
+    void executer(differable("cocherRepas", date, slot, plat.id), dansLeJournal((l) => [provisoire, ...l]))
+  }
+
+  function decocher(log: Log) {
+    void executer(() => retirerRepas(log.id), dansLeJournal((l) => l.filter((x) => x.id !== log.id)))
+  }
+
+  function marque(jourCal: string): Marque | null {
+    if (notes.has(jourCal)) return { etat: "fait", description: "repas notés" }
+    if (!casesDu(jourCal).some((c) => c.meal)) return null
+    return jourCal < aujourdhui!
+      ? { etat: "passe", description: "menu prévu, rien de noté" }
+      : { etat: "prevu", description: "menu prévu" }
+  }
 
   function remplacer(casePlan: CasePlan, mealId: string | null) {
     const plat = mealId ? (repas.data?.find((r) => r.id === mealId) ?? null) : null
@@ -75,96 +108,136 @@ export default function Menus() {
     })
   }
 
-  function surDepot({ active, over }: DragEndEvent) {
-    setCaseGlissee(null)
-    const source = cases.find((c) => c.id === active.id)
-    const cible = cases.find((c) => c.id === over?.id)
-    if (source && cible && source.id !== cible.id && source.slot === cible.slot) echanger(source, cible)
-  }
-
   return (
     <>
       <div className="flex items-start justify-between gap-3">
-        <EnTete titre="Menus" sousTitre="Le plan tourne sur deux semaines" />
+        <EnTete titre="Menus" sousTitre="Touche une date pour voir son menu et le modifier" />
         <LienHistorique />
       </div>
 
-      <Filtres
-        libelle="Semaine affichée"
-        valeur={semaine}
-        onChange={setChoix}
-        options={(["1", "2"] as const).map((valeur) => ({
-          valeur,
-          libelle: `Semaine ${valeur}${valeur === semaineEnCours ? " · en cours" : ""}`,
-        }))}
+      <Calendrier
+        mois={mois ?? premierDuMois(date)}
+        onMois={setMois}
+        selection={date}
+        onChoisir={setDateChoisie}
+        aujourdhui={aujourdhui}
+        marque={marque}
       />
 
-      <p className="-mt-3 text-sm text-muted-foreground">
-        Appuie sur un repas pour le changer. Fais glisser sa poignée sur un autre jour pour les échanger.
-      </p>
+      <Section titre={majuscule(dateLongue(date))} aside={`Semaine ${semaine} des menus`}>
+        <Carte className="overflow-hidden">
+          <ul className="divide-y">
+            {SLOTS.map((slot) => {
+              const casePlan = cases.find((c) => c.slot === slot)
+              const log = logs.find((l) => l.slot === slot)
+              const libelle = LIBELLE_SLOT[slot] ?? slot
+              const etat = log?.hors_plan ? (
+                <Etiquette ton="warning">Hors plan</Etiquette>
+              ) : log ? (
+                <Etiquette ton="success">Pris</Etiquette>
+              ) : null
 
-      <DndContext
-        id="echange-repas"
-        sensors={capteurs}
-        collisionDetection={pointerWithin}
-        onDragStart={({ active }) => setCaseGlissee(cases.find((c) => c.id === active.id) ?? null)}
-        onDragCancel={() => setCaseGlissee(null)}
-        onDragEnd={surDepot}
-      >
-        <ol className="space-y-3">
-          {JOURS.map((jour) => {
-            const aujourdhuiIci = jour === jourActuel && semaine === semaineEnCours
-            return (
-              <li key={jour} aria-current={aujourdhuiIci ? "date" : undefined}>
-                <Carte className={cn("overflow-hidden", aujourdhuiIci && "border-2 border-primary")}>
-                  <div className="flex items-center justify-between gap-3 px-4 pt-4 pb-2">
-                    <h2 className="text-lg font-semibold">{majuscule(jour)}</h2>
-                    {aujourdhuiIci && <Etiquette ton="brand">Aujourd&apos;hui</Etiquette>}
-                  </div>
-                  <ul className="divide-y">
-                    {SLOTS.map((slot) => {
-                      const casePlan = cases.find((c) => c.jour === jour && c.slot === slot)
-                      return casePlan ? (
-                        <CaseMenu
-                          key={slot}
-                          casePlan={casePlan}
-                          slotGlisse={caseGlissee?.slot ?? null}
-                          onOuvrir={() => setCaseOuverte(casePlan.id)}
-                        />
-                      ) : (
-                        <li key={slot} className="px-4 py-3">
-                          <span className="block text-sm text-muted-foreground">{LIBELLE_SLOT[slot]}</span>
-                          <span className="block text-muted-foreground">Rien de prévu</span>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </Carte>
-              </li>
-            )
-          })}
-        </ol>
+              const caseACocher = notable && (
+                <button
+                  type="button"
+                  role="checkbox"
+                  aria-checked={Boolean(log)}
+                  aria-label={`${libelle} pris le ${dateLongue(date)}`}
+                  disabled={(log?.id.startsWith("provisoire-") ?? false) || (!log && !casePlan?.meal)}
+                  onClick={() => (log ? decocher(log) : casePlan?.meal && cocher(slot, casePlan.meal))}
+                  className="flex w-14 shrink-0 items-center justify-center outline-none focus-visible:bg-muted active:bg-muted disabled:opacity-40"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-lg border-2 transition-colors duration-150",
+                      log ? "border-primary bg-primary text-primary-foreground" : "border-input"
+                    )}
+                  >
+                    {log && <Check className="size-4" strokeWidth={3} />}
+                  </span>
+                </button>
+              )
 
-        <DragOverlay>
-          {caseGlissee && (
-            // L'aperçu hérite de la largeur de la poignée : on lui donne la sienne, calée à droite sur elle.
-            <div className="w-64 -translate-x-52 rounded-xl border-2 border-primary bg-card px-4 py-3 shadow-lg">
-              <span className="block text-sm text-muted-foreground">{LIBELLE_SLOT[caseGlissee.slot]}</span>
-              <span className="block leading-snug font-medium">
-                {caseGlissee.meal?.nom ?? "Rien de prévu"}
-              </span>
-            </div>
-          )}
-        </DragOverlay>
-      </DndContext>
+              if (!casePlan) {
+                return (
+                  <li key={slot} className="flex min-h-16 items-center gap-3 px-4 py-3">
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-brand">{libelle}</span>
+                      <span className="block text-muted-foreground">Rien de prévu</span>
+                    </span>
+                    {etat}
+                  </li>
+                )
+              }
+              return (
+                <li key={slot} className="flex items-stretch">
+                  {caseACocher}
+                  <button
+                    type="button"
+                    onClick={() => setCaseOuverte(casePlan.id)}
+                    aria-label={`${libelle} : ${casePlan.meal?.nom ?? "rien de prévu"}. Modifier`}
+                    className={cn(
+                      "flex min-h-16 min-w-0 flex-1 items-center gap-3 py-3 pr-4 text-left outline-none transition-colors duration-150 focus-visible:bg-muted active:bg-muted",
+                      !caseACocher && "pl-4"
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 space-y-0.5">
+                      <span className="block text-sm font-semibold text-brand">{libelle}</span>
+                      <span
+                        className={
+                          casePlan.meal ? "block leading-snug font-medium" : "block text-muted-foreground"
+                        }
+                      >
+                        {casePlan.meal?.nom ?? "Rien de prévu"}
+                      </span>
+                      {casePlan.meal && (
+                        <span className="block text-sm text-muted-foreground tabular-nums">
+                          {macros(casePlan.meal)}
+                        </span>
+                      )}
+                    </span>
+                    {etat}
+                    <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </Carte>
+        {notable && (
+          <Button
+            variant="outline"
+            className="h-12 w-full gap-2 text-base font-semibold"
+            disabled={slotsLibres.length === 0}
+            onClick={() => setHorsPlan(true)}
+          >
+            <Plus className="size-5" aria-hidden="true" />
+            Repas hors plan
+          </Button>
+        )}
+        <p className="text-sm text-muted-foreground">
+          Le menu revient toutes les deux semaines : modifier un repas le change pour tous les {jour}s de la
+          semaine {semaine}.
+        </p>
+      </Section>
+
+      <FeuilleHorsPlan
+        ouvert={horsPlan}
+        onFermer={() => setHorsPlan(false)}
+        date={date}
+        duJour={date === aujourdhui}
+        slotsLibres={slotsLibres}
+        secours={(repas.data ?? []).filter((r) => r.tag === "secours")}
+      />
 
       <EditeurCase
         casePlan={ouverte}
         autresJours={
           ouverte
-            ? JOURS.flatMap((jour) => cases.filter((c) => c.jour === jour && c.slot === ouverte.slot)).filter(
-                (c) => c.id !== ouverte.id
-              )
+            ? JOURS.flatMap((j) =>
+                plan.data.filter((c) => c.semaine === ouverte.semaine && c.jour === j && c.slot === ouverte.slot)
+              ).filter((c) => c.id !== ouverte.id)
             : []
         }
         onFermer={() => setCaseOuverte(null)}
@@ -172,58 +245,5 @@ export default function Menus() {
         onEchanger={echanger}
       />
     </>
-  )
-}
-
-// Une case du plan : un appui l'ouvre, sa poignée la fait glisser vers la même case d'un autre jour.
-function CaseMenu({
-  casePlan,
-  slotGlisse,
-  onOuvrir,
-}: {
-  casePlan: CasePlan
-  // Le repas en cours de glissement, s'il y en a un : seules les cases du même repas l'acceptent.
-  slotGlisse: string | null
-  onOuvrir: () => void
-}) {
-  const glissable = useDraggable({ id: casePlan.id })
-  const cible = useDroppable({ id: casePlan.id, disabled: slotGlisse !== casePlan.slot })
-  const accepte = slotGlisse === casePlan.slot && !glissable.isDragging
-  const libelle = LIBELLE_SLOT[casePlan.slot] ?? casePlan.slot
-
-  return (
-    <li
-      ref={cible.setNodeRef}
-      className={cn(
-        "flex items-stretch transition-colors duration-150",
-        glissable.isDragging && "opacity-40",
-        slotGlisse !== null && !accepte && !glissable.isDragging && "opacity-40",
-        accepte && "bg-brand-soft",
-        cible.isOver && accepte && "bg-primary/30"
-      )}
-    >
-      <button
-        type="button"
-        onClick={onOuvrir}
-        aria-label={`${libelle} : ${casePlan.meal?.nom ?? "rien de prévu"}. Modifier`}
-        className="min-h-14 min-w-0 flex-1 py-3 pl-4 text-left outline-none focus-visible:bg-muted active:bg-muted"
-      >
-        <span className="block text-sm text-muted-foreground">{libelle}</span>
-        <span className={cn("block leading-snug", casePlan.meal ? "font-medium" : "text-muted-foreground")}>
-          {casePlan.meal?.nom ?? "Rien de prévu"}
-        </span>
-      </button>
-      <button
-        ref={glissable.setNodeRef}
-        type="button"
-        aria-label={`Faire glisser pour échanger : ${libelle}`}
-        // touch-none : sur la poignée, le doigt déplace le repas au lieu de faire défiler la page.
-        className="flex w-12 shrink-0 touch-none items-center justify-center text-muted-foreground outline-none focus-visible:bg-muted active:bg-muted"
-        {...glissable.attributes}
-        {...glissable.listeners}
-      >
-        <GripVertical className="size-5" aria-hidden="true" />
-      </button>
-    </li>
   )
 }

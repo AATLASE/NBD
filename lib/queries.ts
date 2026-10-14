@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query"
 
+import { depuisDureeDeVie } from "@/lib/chat/types"
 import { createClient } from "@/lib/supabase/client"
 
 // Toutes les lectures de l'application. Les écrans ne parlent jamais à Supabase directement.
@@ -51,6 +52,17 @@ function lireHistoriqueSeries() {
   )
 }
 
+// Les séries d'une séance faite, avec le nom de leur exercice : détail d'une date du calendrier.
+function lireSeriesSeance(logId: string) {
+  return liste(
+    db()
+      .from("set_logs")
+      .select("id, serie_num, charge_kg, reps, duree_sec, exercise_id, exercise:exercises(nom)")
+      .eq("workout_log_id", logId)
+      .order("serie_num")
+  )
+}
+
 function lireExercices() {
   return liste(db().from("exercises").select("*").not("archived", "is", true).order("nom"))
 }
@@ -71,12 +83,13 @@ async function lireEmail() {
   return data.session?.user.email ?? null
 }
 
-// Les derniers messages du chat, du plus ancien au plus récent.
+// Les messages du chat encore en vie, du plus ancien au plus récent.
 async function lireMessagesChat() {
   const recents = await liste(
     db()
       .from("chat_messages")
       .select("id, role, content, tool_calls, created_at")
+      .gte("created_at", depuisDureeDeVie())
       .order("created_at", { ascending: false })
       .limit(100)
   )
@@ -182,6 +195,8 @@ export const useJournalSeances = () =>
   useQuery({ queryKey: ["journal-seances"], queryFn: lireJournalSeances })
 export const useHistoriqueSeries = () =>
   useQuery({ queryKey: ["historique-series"], queryFn: lireHistoriqueSeries })
+export const useSeriesSeance = (logId: string) =>
+  useQuery({ queryKey: ["series-seance", logId], queryFn: () => lireSeriesSeance(logId) })
 export const useExercices = () => useQuery({ queryKey: ["exercices"], queryFn: lireExercices })
 export const useModifications = () =>
   useQuery({ queryKey: ["modifications"], queryFn: lireModifications })

@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk"
 
 import { CONSIGNE, construireEtat, personnage } from "@/lib/chat/consigne"
 import { creerOutils, nouveauCumul } from "@/lib/chat/outils"
-import type { DonneesMessage, Effet } from "@/lib/chat/types"
+import { depuisDureeDeVie, type DonneesMessage, type Effet } from "@/lib/chat/types"
 import type { Json } from "@/lib/database.types"
 import { createClient } from "@/lib/supabase/server"
 
@@ -17,7 +17,7 @@ const LONGUEUR_MAX = 2000
 
 const echec = (message: string, status = 502) => Response.json({ ok: false, message }, { status })
 
-const STATUT = { en_attente: "en attente de sa réponse", appliquee: "acceptée et appliquée", abandonnee: "laissée de côté" }
+const STATUT = { en_attente: "en attente de sa réponse", appliquee: "acceptée et appliquée", abandonnee: "refusée" }
 
 // Un ancien message de l'assistant est rendu au modèle avec ce que ses outils avaient fait :
 // sans cela il ne saurait plus ce qui est appliqué, ni quel identifiant passer à « annuler ».
@@ -49,6 +49,8 @@ export async function POST(request: Request) {
     supabase
       .from("chat_messages")
       .select("role, content, tool_calls")
+      // Les messages disparus du chat ne sont plus rendus au modèle : il oublie ce que l'utilisateur ne voit plus.
+      .gte("created_at", depuisDureeDeVie())
       .order("created_at", { ascending: false })
       .limit(MESSAGES_D_HISTORIQUE),
     construireEtat(supabase, aujourdhui),

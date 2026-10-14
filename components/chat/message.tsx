@@ -10,9 +10,9 @@ import type { DonneesMessage, Effet } from "@/lib/chat/types"
 import type { IdCoach } from "@/lib/coachs"
 import type { MessageChat } from "@/lib/queries"
 
-// Un message du chat et, pour l'assistant, ce que ses outils ont fait (SPEC 7.3). Trois cas,
-// trois apparences : du texte seul, une modification appliquée (liseré vert, bouton
-// « Annuler »), une proposition (carte encadrée avant/après, deux boutons).
+// Un message du chat et, pour l'assistant, ce que ses outils proposent. Toute modification
+// arrive sur une carte avec deux boutons, « Accepter » et « Refuser » : rien n'est écrit sans
+// accord. Les anciens messages peuvent encore porter une modification appliquée d'office.
 
 // État d'une modification dans l'historique. `inconnue` : trop ancienne pour être relue ici.
 export type EtatModification = "active" | "annulee" | "inconnue"
@@ -137,7 +137,9 @@ function Proposition({
   return (
     <div className={cn("overflow-hidden rounded-2xl border-2 bg-card", enAttente ? "border-brand/50" : "border-border")}>
       <div className="space-y-0.5 px-4 pt-3">
-        <p className={cn("text-sm font-semibold", enAttente ? "text-brand" : "text-muted-foreground")}>Proposition</p>
+        <p className={cn("text-sm font-semibold", enAttente ? "text-brand" : "text-muted-foreground")}>
+          {enAttente ? "À valider" : "Proposition"}
+        </p>
         <p className="leading-snug font-medium">{effet.resume}</p>
       </div>
 
@@ -165,36 +167,38 @@ function Proposition({
         <div className="mt-3 grid grid-cols-2 gap-2 border-t p-3">
           <Button
             variant="outline"
-            className="h-12 text-base font-semibold"
+            className="h-12 gap-2 text-base font-semibold"
             disabled={actions.occupe}
             onClick={() => actions.abandonner(messageId, effet.id)}
           >
-            Laisser tomber
+            <X className="size-5" aria-hidden="true" />
+            Refuser
           </Button>
           <Button
-            className="h-12 text-base font-semibold"
+            className="h-12 gap-2 text-base font-semibold"
             disabled={actions.occupe}
             onClick={() => actions.appliquer(messageId, effet.id)}
           >
-            Appliquer
+            <Check className="size-5" aria-hidden="true" />
+            Accepter
           </Button>
         </div>
       ) : effet.statut === "abandonnee" ? (
         <p className="mt-3 flex items-center gap-1.5 border-t px-4 py-3 text-sm font-semibold text-muted-foreground">
           <X className="size-4" aria-hidden="true" />
-          Laissée de côté : rien n&apos;a été changé
+          Refusée : rien n&apos;a été changé
         </p>
       ) : (
         <div className="mt-3 flex min-h-14 items-center gap-3 border-t py-1.5 pr-2 pl-4">
           {etat === "annulee" ? (
             <p className="flex flex-1 items-center gap-1.5 text-sm font-semibold text-muted-foreground">
               <Undo2 className="size-4" aria-hidden="true" />
-              Appliquée, puis annulée
+              Acceptée, puis annulée
             </p>
           ) : (
             <p className="flex flex-1 items-center gap-1.5 text-sm font-semibold text-success">
               <Check className="size-4" aria-hidden="true" />
-              Appliquée
+              Acceptée
             </p>
           )}
           {etat === "active" && effet.groupeId && <BoutonAnnuler groupeId={effet.groupeId} actions={actions} />}
