@@ -7,7 +7,9 @@ import { Carte, EnTete, Etiquette, Lettre, Section } from "@/components/blocs"
 import { MotDuCoach } from "@/components/coach/mot"
 import { Attente } from "@/components/etats"
 import { Reperes } from "@/components/reperes"
+import { AjustementsProposes } from "@/components/sport/ajustements"
 import { BoutonDemarrer } from "@/components/sport/bouton-demarrer"
+import { ExceptionPlanning } from "@/components/sport/exception-planning"
 import { ProtocolePied, itemsDuJour } from "@/components/sport/protocole-pied"
 import { SaisieDouleur } from "@/components/sport/saisie-douleur"
 import { resumeSeance } from "@/components/sport/seance"
@@ -18,7 +20,8 @@ import { differable } from "@/lib/file-attente"
 import { dateLongue, jourDe, prescription } from "@/lib/format"
 import { majuscule } from "@/lib/libelles"
 import { ecrireProtocoleDuJour, useProtocoleDuJour } from "@/lib/protocole-du-jour"
-import { useDebutProgramme, useJournalSeances, usePied, useSeances, type Seance } from "@/lib/queries"
+import { seanceDeLaSemaineType, seancePrevue } from "@/lib/planning"
+import { useDebutProgramme, useJournalSeances, usePied, usePlanning, useSeances, type Seance } from "@/lib/queries"
 import { estJourSurDeux, semaineProgramme } from "@/lib/regles"
 import { nombreDeSeries, useBrouillon } from "@/lib/seance-en-cours"
 
@@ -30,17 +33,19 @@ export default function SportAujourdhui() {
   const journal = useJournalSeances()
   const pied = usePied()
   const debut = useDebutProgramme()
+  const planning = usePlanning()
   const brouillon = useBrouillon()
   const cochesLocales = useProtocoleDuJour(aujourdhui)
   const { executer, enCours } = useEdition()
 
-  if (!aujourdhui || !seances.data || !journal.data || !pied.data || debut.data === undefined) {
-    return <Attente requetes={[seances, journal, pied, debut]} />
+  if (!aujourdhui || !seances.data || !journal.data || !pied.data || !planning.data || debut.data === undefined) {
+    return <Attente requetes={[seances, journal, pied, planning, debut]} />
   }
 
   const { semaine } = semaineProgramme(debut.data, aujourdhui)
   const jour = jourDe(aujourdhui)
-  const seanceDuJour = seances.data.find((s) => s.jour_suggere === jour)
+  // La semaine type, sauf si le planning (décidé avec le coach ou à la main) dit autre chose.
+  const { seance: seanceDuJour, exception } = seancePrevue(aujourdhui, seances.data, planning.data)
   const faiteAujourdhui = journal.data.find((log) => log.date === aujourdhui)
   const seanceFaite = faiteAujourdhui
     ? seances.data.find((s) => s.id === faiteAujourdhui.workout_id)
@@ -101,7 +106,12 @@ export default function SportAujourdhui() {
         </Link>
       )}
 
+      <AjustementsProposes />
+
       <Section titre="Séance du jour">
+        {exception && !faiteAujourdhui && (
+          <ExceptionPlanning exception={exception} seanceType={seanceDeLaSemaineType(aujourdhui, seances.data)?.code} />
+        )}
         {faiteAujourdhui ? (
           <Carte className="flex items-center gap-3 p-4">
             <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-success-soft text-success">
@@ -141,7 +151,9 @@ export default function SportAujourdhui() {
         ) : (
           <Carte className="space-y-4 p-4">
             <div>
-              <p className="font-semibold">Pas de séance prévue le {jour}</p>
+              <p className="font-semibold">
+                {exception ? "Pas de séance aujourd'hui" : `Pas de séance prévue le ${jour}`}
+              </p>
               <p className="text-sm text-muted-foreground">
                 Jour de repos. Tu peux quand même en choisir une.
               </p>

@@ -52,6 +52,22 @@ function lireHistoriqueSeries() {
   )
 }
 
+// Les exceptions à la semaine type, date par date (repos, séance changée).
+function lirePlanning() {
+  return liste(db().from("planning").select("id, date, workout_id, raison").order("date"))
+}
+
+// Ajustements proposés après une séance, en attente d'une réponse.
+function lireAjustements() {
+  return liste(
+    db()
+      .from("ajustements")
+      .select("id, workout_id, created_at, resume, explication, diff")
+      .eq("statut", "en_attente")
+      .order("created_at", { ascending: false })
+  )
+}
+
 // Les séries d'une séance faite, avec le nom de leur exercice : détail d'une date du calendrier.
 function lireSeriesSeance(logId: string) {
   return liste(
@@ -163,6 +179,7 @@ export type SeanceFaite = Awaited<ReturnType<typeof lireHistoriqueSeries>>[numbe
 export type Exercice = Awaited<ReturnType<typeof lireExercices>>[number]
 export type Repas = Awaited<ReturnType<typeof lireRepas>>[number]
 export type MessageChat = Awaited<ReturnType<typeof lireMessagesChat>>[number]
+export type Ajustement = Awaited<ReturnType<typeof lireAjustements>>[number]
 export type CasePlan = Awaited<ReturnType<typeof lirePlanRepas>>[number]
 
 // Tout ce que les écrans lisent. Préchargé une fois en ligne, pour que chaque écran
@@ -184,6 +201,8 @@ export const LECTURES: { queryKey: string[]; queryFn: () => Promise<unknown> }[]
   { queryKey: ["journal-repas"], queryFn: lireJournalRepas },
   { queryKey: ["courses"], queryFn: lireCourses },
   { queryKey: ["debut-programme"], queryFn: lireDebutProgramme },
+  { queryKey: ["planning"], queryFn: lirePlanning },
+  { queryKey: ["ajustements"], queryFn: lireAjustements },
 ]
 
 export const useProfil = () => useQuery({ queryKey: ["profil"], queryFn: lireProfil })
@@ -211,5 +230,7 @@ export const usePlanRepas = () => useQuery({ queryKey: ["plan-repas"], queryFn: 
 export const useJournalRepas = () =>
   useQuery({ queryKey: ["journal-repas"], queryFn: lireJournalRepas })
 export const useCourses = () => useQuery({ queryKey: ["courses"], queryFn: lireCourses })
+export const usePlanning = () => useQuery({ queryKey: ["planning"], queryFn: lirePlanning })
+export const useAjustements = () => useQuery({ queryKey: ["ajustements"], queryFn: lireAjustements })
 export const useDebutProgramme = () =>
   useQuery({ queryKey: ["debut-programme"], queryFn: lireDebutProgramme })

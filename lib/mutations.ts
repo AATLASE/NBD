@@ -35,6 +35,9 @@ import {
   PropositionSportSchema,
   type ExercicePropose,
 } from "@/lib/proposition/schemas"
+import { after } from "next/server"
+
+import { CHAMPS_AJUSTABLES, recalculerApresSeance } from "@/lib/recalcul"
 import { createClient } from "@/lib/supabase/server"
 
 // Couche d'écriture unique (SPEC section 4). Aucun composant n'écrit en base directement :
@@ -122,6 +125,7 @@ type Changement = {
     | "profiles"
     | "grocery_items"
     | "grocery_list_items"
+    | "planning"
   operation: "insert" | "update" | "delete"
   id: string
   data?: Record<string, unknown>
@@ -1429,6 +1433,8 @@ export async function enregistrerSeance(seance: SeanceAEnregistrer): Promise<Res
           : "Enregistrement impossible. Ta séance est gardée sur ce téléphone, réessaie.",
     }
   }
+  // La séance est enregistrée : le recalcul des suivantes part en tâche de fond, après la réponse.
+  after(() => recalculerApresSeance(supabase, seance.id))
   return { ok: true, changeLogId: data }
 }
 
@@ -1693,14 +1699,18 @@ export async function appliquerProposition(messageId: string, effetId: string): 
     effet.statut = "appliquee"
     effet.groupeId = groupeId
     await noterReponse(supabase, messageId, donnees)
+    const seanceId = effet.seance.p_id
+    after(() => recalculerApresSeance(supabase, seanceId))
     return { ok: true, groupeId, resume: effet.resume }
   }
 
   // Mêmes limites qu'au moment de la proposition : le message enregistré ne fait pas foi à lui seul.
   if (!Array.isArray(effet.changements) || effet.changements.length === 0) return INVALIDE
   if (effet.changements.some((c) => !TABLES_DU_CHAT.includes(c.table))) return INVALIDE
-  // La liste de courses est un document dérivé : elle seule peut dépasser la limite de lignes.
-  if (effet.changements.filter((c) => c.table !== "grocery_list_items").length > LIGNES_MAX_DU_CHAT) return INVALIDE
+  // La liste de courses (document dérivé) et le planning (jusqu'à 7 jours) ne sont pas le programme :
+  // ils peuvent dépasser la limite de lignes.
+  const horsLimite = ["grocery_list_items", "planning"]
+  if (effet.changements.filter((c) => !horsLimite.includes(c.table)).length > LIGNES_MAX_DU_CHAT) return INVALIDE
 
   // Une modification du programme par l'assistant compte dans le quota du mois, une fois par message.
   let reservee: string | null = null
@@ -1746,5 +1756,101 @@ export async function abandonnerProposition(
   if (proposition.effet.statut !== "en_attente") return { ok: false, message: "Cette proposition a déjà reçu une réponse." }
   proposition.effet.statut = "abandonnee"
   const { error } = await noterReponse(supabase, messageId, proposition.donnees)
+  return error ? { ok: false, message: "Réponse non enregistrée. Réessaie." } : { ok: true }
+}
+
+// --- Planning par date et ajustements proposés après une séance --------------------------------
+
+// Pose une exception à la semaine type pour une date : une autre séance, ou repos (workoutId vide).
+// S'il y a déjà une exception ce jour-là, elle est remplacée.
+export async function planifierJour(date: string, workoutId: string | null, raison: string | null): Promise<ResultatEdition> {
+  if (!DATE.test(date) || (workoutId !== null && !UUID.test(workoutId))) return INVALIDE
+  const texte = raison?.trim().slice(0, 300) || null
+  const supabase = await createClient()
+  const [{ data: existante }, { data: seance }] = await Promise.all([
+    supabase.from("planning").select("id").eq("date", date).maybeSingle(),
+    workoutId ? supabase.from("workouts").select("code").eq("id", workoutId).maybeSingle() : Promise.resolve({ data: null }),
+  ])
+  if (workoutId && !seance) return INTROUVABLE
+  const data = { date, workout_id: workoutId, raison: texte }
+  return appliquer(
+    supabase,
+    [
+      existante
+        ? { table: "planning", operation: "update", id: existante.id, data }
+        : { table: "planning", operation: "insert", id: crypto.randomUUID(), data },
+    ],
+    `${dateCourte(date)} : ${seance ? `séance ${seance.code}` : "repos"}`
+  )
+}
+
+// Retire l'exception d'une date : la semaine type s'applique de nouveau.
+export async function retablirJour(date: string): Promise<ResultatEdition> {
+  if (!DATE.test(date)) return INVALIDE
+  const supabase = await createClient()
+  const { data: existante } = await supabase.from("planning").select("id").eq("date", date).maybeSingle()
+  if (!existante) return INTROUVABLE
+  return appliquer(
+    supabase,
+    [{ table: "planning", operation: "delete", id: existante.id }],
+    `${dateCourte(date)} : retour au programme`
+  )
+}
+
+type ChangementAjustement = { table: string; operation: string; id: string; data: Record<string, unknown>; avant: Record<string, unknown> }
+
+// Applique un ajustement proposé après une séance. Il est relu et revérifié ici : seules les
+// colonnes ajustables d'une ligne de séance, et seulement si le programme n'a pas bougé depuis.
+export async function accepterAjustement(id: string): Promise<ResultatEdition> {
+  if (!UUID.test(id)) return INVALIDE
+  const supabase = await createClient()
+  const { data: ajustement } = await supabase
+    .from("ajustements")
+    .select("id, resume, statut, changements")
+    .eq("id", id)
+    .maybeSingle()
+  if (!ajustement) return INTROUVABLE
+  if (ajustement.statut !== "en_attente") return { ok: false, message: "Cet ajustement a déjà reçu une réponse." }
+
+  const changements = (Array.isArray(ajustement.changements) ? ajustement.changements : []) as unknown as ChangementAjustement[]
+  const bienFormes = changements.length > 0 && changements.every(
+    (c) =>
+      c.table === "workout_exercises" &&
+      c.operation === "update" &&
+      UUID.test(c.id) &&
+      Object.keys(c.data ?? {}).length > 0 &&
+      Object.keys(c.data).every((cle) => (CHAMPS_AJUSTABLES as readonly string[]).includes(cle))
+  )
+  if (!bienFormes) return INVALIDE
+
+  const { data: actuelles } = await supabase
+    .from("workout_exercises")
+    .select("*")
+    .in("id", changements.map((c) => c.id))
+    .eq("archived", false)
+  const parId = new Map((actuelles ?? []).map((l) => [l.id, l as unknown as Record<string, unknown>]))
+  const aJour = changements.every((c) => {
+    const ligne = parId.get(c.id)
+    return ligne && Object.entries(c.avant ?? {}).every(([cle, valeur]) => ligne[cle] === valeur)
+  })
+  if (!aJour) {
+    await supabase.from("ajustements").update({ statut: "perimee" }).eq("id", id)
+    return { ok: false, message: "Ton programme a changé depuis cette proposition : elle a été retirée." }
+  }
+
+  const { data: groupeId, error } = await supabase.rpc("appliquer_changements", {
+    p_changements: changements.map(({ table, operation, id: ligne, data }) => ({ table, operation, id: ligne, data })) as unknown as Json,
+    p_resume: ajustement.resume,
+    p_source: "chatbot",
+  })
+  if (error || !groupeId) return echec(error ?? {})
+  await supabase.from("ajustements").update({ statut: "acceptee", groupe_id: groupeId }).eq("id", id)
+  return { ok: true, groupeId, resume: ajustement.resume }
+}
+
+export async function refuserAjustement(id: string): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!UUID.test(id)) return { ok: false, message: "Ajustement introuvable." }
+  const supabase = await createClient()
+  const { error } = await supabase.from("ajustements").update({ statut: "refusee" }).eq("id", id).eq("statut", "en_attente")
   return error ? { ok: false, message: "Réponse non enregistrée. Réessaie." } : { ok: true }
 }

@@ -51,6 +51,52 @@ export type Database = {
                   Relationships: [
                     
                   ]
+                },"ajustements": {
+                  Row: {
+                    "changements": Json,"created_at": string,"diff": Json,"explication": string,"groupe_id": string | null,"id": string,"resume": string,"statut": string,"user_id": string,"workout_id": string,"workout_log_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "changements": Json,"created_at"?: string,"diff"?: Json,"explication": string,"groupe_id"?: string | null,"id"?: string,"resume": string,"statut"?: string,"user_id": string,"workout_id": string,"workout_log_id"?: string | null
+                  }
+                  Update: {
+                    "changements"?: Json,"created_at"?: string,"diff"?: Json,"explication"?: string,"groupe_id"?: string | null,"id"?: string,"resume"?: string,"statut"?: string,"user_id"?: string,"workout_id"?: string,"workout_log_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "ajustements_workout_id_fkey"
+      columns: ["workout_id"]
+isOneToOne: false
+      referencedRelation: "workouts"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "ajustements_workout_log_id_fkey"
+      columns: ["workout_log_id"]
+isOneToOne: false
+      referencedRelation: "workout_logs"
+      referencedColumns: ["id"]
+    }
+                  ]
+                },"planning": {
+                  Row: {
+                    "date": string,"id": string,"raison": string | null,"user_id": string,"workout_id": string | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "date": string,"id"?: string,"raison"?: string | null,"user_id": string,"workout_id"?: string | null
+                  }
+                  Update: {
+                    "date"?: string,"id"?: string,"raison"?: string | null,"user_id"?: string,"workout_id"?: string | null
+                  }
+                  Relationships: [
+                    {
+      foreignKeyName: "planning_workout_id_fkey"
+      columns: ["workout_id"]
+isOneToOne: false
+      referencedRelation: "workouts"
+      referencedColumns: ["id"]
+    }
+                  ]
                 },"chat_messages": {
                   Row: {
                     "content": string,"created_at": string | null,"id": string,"role": string,"tool_calls": Json | null,"user_id": string
@@ -339,14 +385,14 @@ isOneToOne: false
                   ]
                 },"workout_logs": {
                   Row: {
-                    "date": string,"duree_min": number | null,"id": string,"note": string | null,"ressenti": number | null,"user_id": string,"workout_id": string | null
+                    "date": string,"duree_min": number | null,"id": string,"note": string | null,"note_coach": string | null,"ressenti": number | null,"user_id": string,"workout_id": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "date"?: string,"duree_min"?: number | null,"id"?: string,"note"?: string | null,"ressenti"?: number | null,"user_id": string,"workout_id"?: string | null
+                    "date"?: string,"duree_min"?: number | null,"id"?: string,"note"?: string | null,"note_coach"?: string | null,"ressenti"?: number | null,"user_id": string,"workout_id"?: string | null
                   }
                   Update: {
-                    "date"?: string,"duree_min"?: number | null,"id"?: string,"note"?: string | null,"ressenti"?: number | null,"user_id"?: string,"workout_id"?: string | null
+                    "date"?: string,"duree_min"?: number | null,"id"?: string,"note"?: string | null,"note_coach"?: string | null,"ressenti"?: number | null,"user_id"?: string,"workout_id"?: string | null
                   }
                   Relationships: [
                     {

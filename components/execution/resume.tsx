@@ -92,6 +92,7 @@ export function Resume({
               duree_min: seanceFaite.dureeMin,
               ressenti,
               note: null,
+              note_coach: null,
             },
             ...journal,
           ]

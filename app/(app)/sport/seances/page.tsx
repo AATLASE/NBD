@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, ClipboardCheck, Dumbbell, Moon, Pencil, Plus } from "lucide-react"
+import { BedDouble, Check, ClipboardCheck, Dumbbell, Moon, Pencil, Plus } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -9,7 +9,9 @@ import { Carte, EnTete, Section, Vide } from "@/components/blocs"
 import { Calendrier, premierDuMois, type Marque } from "@/components/calendrier"
 import { Attente } from "@/components/etats"
 import { LienHistorique } from "@/components/lien-historique"
+import { AjustementsProposes } from "@/components/sport/ajustements"
 import { BoutonDemarrer } from "@/components/sport/bouton-demarrer"
+import { ExceptionPlanning } from "@/components/sport/exception-planning"
 import { SaisieApresCoup } from "@/components/sport/saisie-apres-coup"
 import { CarteSeance } from "@/components/sport/seance"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -19,8 +21,9 @@ import { useEdition } from "@/lib/edition"
 import { texteSerie } from "@/lib/execution"
 import { dateLongue, jourDe } from "@/lib/format"
 import { majuscule } from "@/lib/libelles"
-import { creerSeance } from "@/lib/mutations"
-import { useJournalSeances, useSeances, useSeriesSeance, type Seance } from "@/lib/queries"
+import { creerSeance, planifierJour } from "@/lib/mutations"
+import { seanceDeLaSemaineType, seancePrevue, type Exception } from "@/lib/planning"
+import { useJournalSeances, usePlanning, useSeances, useSeriesSeance, type Seance } from "@/lib/queries"
 
 // Code court d'une séance pour la marque du calendrier, comme sa pastille.
 const codeCourt = (code: string) => (code.length <= 2 ? code : code.charAt(0))
@@ -29,6 +32,7 @@ export default function Seances() {
   const aujourdhui = useAujourdhui()
   const seances = useSeances()
   const journal = useJournalSeances()
+  const planning = usePlanning()
   const router = useRouter()
   const { executer, enCours } = useEdition()
   const [dateChoisie, setDateChoisie] = useState<string | null>(null)
@@ -40,19 +44,37 @@ export default function Seances() {
     if (resultat.ok && resultat.id) router.push(`/sport/seances/${resultat.id}?edition=1`)
   }
 
-  if (!aujourdhui || !seances.data || !journal.data) return <Attente requetes={[seances, journal]} />
+  if (!aujourdhui || !seances.data || !journal.data || !planning.data) {
+    return <Attente requetes={[seances, journal, planning]} />
+  }
 
   // Les séances rattachées à un jour forment la semaine type ; les autres sont des solutions de repli.
   const planifiees = seances.data.filter((s) => s.jour_suggere !== null)
   const libres = seances.data.filter((s) => s.jour_suggere === null)
   const parId = new Map(seances.data.map((s) => [s.id, s]))
-  const prevuesLe = (date: string) => planifiees.filter((s) => s.jour_suggere === jourDe(date))
+  // La semaine type, sauf exception du planning : le même calcul que l'onglet Aujourd'hui et le coach.
+  const prevuesLe = (date: string) => {
+    const { seance } = seancePrevue(date, seances.data, planning.data)
+    return seance ? [seance] : []
+  }
   const faitesLe = (date: string) => journal.data.filter((log) => log.date === date)
 
   const date = dateChoisie ?? aujourdhui
   const faites = faitesLe(date)
   // Une séance prévue déjà faite ce jour-là n'est pas répétée : sa carte de séance faite suffit.
   const prevues = prevuesLe(date).filter((s) => !faites.some((log) => log.workout_id === s.id))
+  const exception = seancePrevue(date, seances.data, planning.data).exception
+  const reposPossible = date >= aujourdhui && faites.length === 0 && prevues.length > 0
+
+  function mettreAuRepos() {
+    void executer(() => planifierJour(date, null, "Repos choisi dans l'application"), {
+      cle: ["planning"],
+      maj: (liste: Exception[]) => [
+        ...liste.filter((p) => p.date !== date),
+        { id: "provisoire", date, workout_id: null, raison: "Repos choisi dans l'application" },
+      ],
+    })
+  }
 
   function marque(jour: string): Marque | null {
     const faite = faitesLe(jour)[0]
@@ -78,6 +100,8 @@ export default function Seances() {
         <LienHistorique />
       </div>
 
+      <AjustementsProposes />
+
       <Calendrier
         mois={mois ?? premierDuMois(date)}
         onMois={setMois}
@@ -89,6 +113,10 @@ export default function Seances() {
 
       <Section titre={majuscule(dateLongue(date))}>
         <div className="space-y-3">
+          {exception && faites.length === 0 && (
+            <ExceptionPlanning exception={exception} seanceType={seanceDeLaSemaineType(date, seances.data)?.code} />
+          )}
+
           {faites.map((log) => (
             <SeanceFaite key={log.id} log={log} seance={log.workout_id ? parId.get(log.workout_id) : undefined} />
           ))}
@@ -97,12 +125,19 @@ export default function Seances() {
             <SeancePrevue
               key={seance.id}
               seance={seance}
-              jour={jourDe(date)}
+              jour={exception ? null : jourDe(date)}
               demarrable={date === aujourdhui && faites.length === 0}
             />
           ))}
 
-          {faites.length === 0 && prevues.length === 0 && (
+          {reposPossible && (
+            <Button variant="ghost" className="h-11 w-full gap-2 text-base" disabled={enCours} onClick={mettreAuRepos}>
+              <BedDouble className="size-5" aria-hidden="true" />
+              Pas de séance ce jour-là
+            </Button>
+          )}
+
+          {faites.length === 0 && prevues.length === 0 && !exception && (
             <Vide Icone={Moon} titre="Jour de repos">
               Aucune séance n&apos;est prévue le {jourDe(date)}.
             </Vide>
@@ -160,10 +195,10 @@ export default function Seances() {
 }
 
 // La séance prévue ce jour-là : la consulter, la modifier, ou la démarrer si c'est aujourd'hui.
-function SeancePrevue({ seance, jour, demarrable }: { seance: Seance; jour: string; demarrable: boolean }) {
+function SeancePrevue({ seance, jour, demarrable }: { seance: Seance; jour: string | null; demarrable: boolean }) {
   return (
     <div className="space-y-2">
-      <p className="text-sm font-semibold text-brand">Prévue chaque {jour}</p>
+      <p className="text-sm font-semibold text-brand">{jour ? `Prévue chaque ${jour}` : "Prévue ce jour-là"}</p>
       <CarteSeance seance={seance} />
       {demarrable && <BoutonDemarrer seanceId={seance.id} />}
       <Link

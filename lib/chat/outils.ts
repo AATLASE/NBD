@@ -1,6 +1,7 @@
 import "server-only"
 
 import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod"
+import { after } from "next/server"
 import { z } from "zod"
 
 import {
@@ -15,6 +16,8 @@ import { cleDe, composerListe, type IngredientDePlat } from "@/lib/courses"
 import type { Json } from "@/lib/database.types"
 import { dateCourte, nombre, prescription } from "@/lib/format"
 import { EQUIPEMENTS, GROUPES, JOURS, LIBELLE_SLOT, SLOTS } from "@/lib/libelles"
+import { seanceDeLaSemaineType } from "@/lib/planning"
+import { recalculerApresSeance } from "@/lib/recalcul"
 import type { createClient } from "@/lib/supabase/server"
 
 // Outils du chatbot (SPEC 7.2) et règles appliquées en code (SPEC 7.3 et 7.4).
@@ -62,6 +65,7 @@ type Plan = {
 }
 
 const texte = (valeur: unknown) => JSON.stringify(valeur)
+const majusculeInitiale = (t: string) => t.charAt(0).toUpperCase() + t.slice(1)
 
 const PROPOSE =
   "PROPOSÉ, PAS APPLIQUÉ : une carte est affichée à l'utilisateur, avec les boutons « Accepter » et « Refuser ». Rien n'est écrit tant qu'il n'a pas accepté. Ne dis pas que c'est fait : dis que tu proposes et qu'il lui reste à valider."
@@ -724,6 +728,90 @@ export function creerOutils(c: Contexte) {
           quota: false,
         })
         return PROPOSE
+      },
+    }),
+
+    // ----- Planning par date -----
+    betaZodTool({
+      name: "planifier_jours",
+      description:
+        "Change ce qui est prévu à des dates précises, sans toucher à la semaine type : un jour de repos (seance_code à null) ou une autre séance du programme (seance_code). " +
+        "Pour décaler une séance, mets le jour d'origine en repos et la séance au nouveau jour, dans le même appel. Donne toujours la raison, en quelques mots. " +
+        "Remettre à une date la séance de sa semaine type retire l'exception. Aujourd'hui ou plus tard seulement.",
+      inputSchema: z.object({
+        jours: z
+          .array(
+            z.object({
+              date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+              seance_code: z.string().min(1).max(8).nullable(),
+              raison: z.string().min(2).max(300),
+            })
+          )
+          .min(1)
+          .max(7),
+      }),
+      run: async ({ jours }) => {
+        if (jours.some((j) => j.date < c.aujourdhui)) return "REFUS : le planning ne se change pas pour un jour passé."
+        if (new Set(jours.map((j) => j.date)).size !== jours.length) return "Une même date apparaît deux fois : regroupe-les."
+        const [{ data: seances }, { data: exceptions }] = await Promise.all([
+          db.from("workouts").select("id, code, nom, jour_suggere").not("archived", "is", true),
+          db.from("planning").select("id, date, workout_id").in("date", jours.map((j) => j.date)),
+        ])
+        const liste = seances ?? []
+        const libelle = (id: string | null | undefined) => {
+          const seance = id ? liste.find((s) => s.id === id) : undefined
+          return seance ? `Séance ${seance.code} · ${seance.nom}` : "Repos"
+        }
+        const changements: ChangementChat[] = []
+        const diff: LigneDiff[] = []
+        for (const jour of jours) {
+          const cible = jour.seance_code ? liste.find((s) => s.code.toLowerCase() === jour.seance_code!.toLowerCase()) : null
+          if (jour.seance_code && !cible) return `Aucune séance avec le code ${jour.seance_code}.`
+          const type = seanceDeLaSemaineType(jour.date, liste)
+          const existante = (exceptions ?? []).find((e) => e.date === jour.date)
+          const avant = libelle(existante ? existante.workout_id : type?.id)
+          const voulue = cible?.id ?? null
+          if (voulue === (type?.id ?? null)) {
+            // Revenir à la semaine type, c'est retirer l'exception.
+            if (existante) changements.push({ table: "planning", operation: "delete", id: existante.id })
+          } else {
+            const data = { date: jour.date, workout_id: voulue, raison: jour.raison }
+            changements.push(
+              existante
+                ? { table: "planning", operation: "update", id: existante.id, data }
+                : { table: "planning", operation: "insert", id: crypto.randomUUID(), data }
+            )
+          }
+          const apres = libelle(voulue)
+          if (avant !== apres) diff.push({ titre: majusculeInitiale(dateCourte(jour.date)), avant, apres })
+        }
+        return soumettre(c, {
+          changements,
+          resume: jours.length === 1 ? `${majusculeInitiale(dateCourte(jours[0]!.date))} : ${libelle(changements[0]?.data?.workout_id as string | null)}. ${jours[0]!.raison}` : `Planning ajusté sur ${jours.length} jours : ${jours[0]!.raison}`,
+          diff,
+          // Décider d'un repos ou d'un décalage n'est pas modifier le programme : pas de quota.
+          quota: false,
+          sansLimite: true,
+        })
+      },
+    }),
+
+    // ----- Mémoire du coach -----
+    betaZodTool({
+      name: "noter_seance",
+      description:
+        "Garde dans une séance faite ce que l'utilisateur en dit : difficulté, fatigue, douleur ou gêne, technique, motivation. " +
+        "La note est invisible pour lui : elle sert au recalcul automatique de ses prochaines séances, relancé à chaque note. Une phrase factuelle, sans conseil. " +
+        "L'identifiant de la séance est dans l'état (séances faites) ou via get_logs.",
+      inputSchema: z.object({ workout_log_id: z.uuid(), note: z.string().min(3).max(400) }),
+      run: async ({ workout_log_id, note }) => {
+        const { data: log } = await db.from("workout_logs").select("id, note_coach").eq("id", workout_log_id).maybeSingle()
+        if (!log) return "Séance introuvable. Relis les séances faites avec get_logs."
+        const texte = [log.note_coach, note.trim()].filter(Boolean).join("\n").slice(-2000)
+        const { error } = await db.from("workout_logs").update({ note_coach: texte }).eq("id", log.id)
+        if (error) return "ÉCHEC : la note n'a pas pu être enregistrée."
+        after(() => recalculerApresSeance(c.supabase, log.id, { force: true }))
+        return "NOTÉ, de façon invisible pour l'utilisateur : n'en parle pas comme d'une modification. Le recalcul de ses prochaines séances est relancé ; s'il y a quelque chose à ajuster, une proposition apparaîtra dans son onglet Sport."
       },
     }),
 

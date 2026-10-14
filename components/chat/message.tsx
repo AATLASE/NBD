@@ -6,7 +6,7 @@ import Markdown from "react-markdown"
 
 import { AvatarCoach } from "@/components/coach/avatar"
 import { Button } from "@/components/ui/button"
-import type { DonneesMessage, Effet } from "@/lib/chat/types"
+import type { DonneesMessage, Effet, LigneDiff } from "@/lib/chat/types"
 import type { IdCoach } from "@/lib/coachs"
 import type { MessageChat } from "@/lib/queries"
 
@@ -123,6 +123,29 @@ function Applique({ effet, actions }: { effet: Extract<Effet, { type: "applique"
   )
 }
 
+// Ce qu'une modification change, ligne par ligne : la valeur actuelle, puis la nouvelle.
+export function DiffAvantApres({ diff, className }: { diff: LigneDiff[]; className?: string }) {
+  return (
+    <ul className={cn("space-y-3", className)}>
+      {diff.map((ligne, index) => (
+        <li key={index} className="space-y-1">
+          <p className="text-sm text-muted-foreground">{ligne.titre}</p>
+          <dl className="overflow-hidden rounded-xl border">
+            <div className="flex gap-3 bg-danger-soft px-3 py-2">
+              <dt className="w-12 shrink-0 text-sm leading-6 font-semibold text-danger">Avant</dt>
+              <dd className="min-w-0 leading-6">{ligne.avant ?? "Rien"}</dd>
+            </div>
+            <div className="flex gap-3 border-t bg-success-soft px-3 py-2">
+              <dt className="w-12 shrink-0 text-sm leading-6 font-semibold text-success">Après</dt>
+              <dd className="min-w-0 leading-6">{ligne.apres ?? "Retiré"}</dd>
+            </div>
+          </dl>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function Proposition({
   messageId,
   effet,
@@ -143,25 +166,7 @@ function Proposition({
         <p className="leading-snug font-medium">{effet.resume}</p>
       </div>
 
-      {effet.diff.length > 0 && (
-        <ul className="space-y-3 px-4 pt-3">
-          {effet.diff.map((ligne, index) => (
-            <li key={index} className="space-y-1">
-              <p className="text-sm text-muted-foreground">{ligne.titre}</p>
-              <dl className="overflow-hidden rounded-xl border">
-                <div className="flex gap-3 bg-danger-soft px-3 py-2">
-                  <dt className="w-12 shrink-0 text-sm leading-6 font-semibold text-danger">Avant</dt>
-                  <dd className="min-w-0 leading-6">{ligne.avant ?? "Rien"}</dd>
-                </div>
-                <div className="flex gap-3 border-t bg-success-soft px-3 py-2">
-                  <dt className="w-12 shrink-0 text-sm leading-6 font-semibold text-success">Après</dt>
-                  <dd className="min-w-0 leading-6">{ligne.apres ?? "Retiré"}</dd>
-                </div>
-              </dl>
-            </li>
-          ))}
-        </ul>
-      )}
+      {effet.diff.length > 0 && <DiffAvantApres diff={effet.diff} className="px-4 pt-3" />}
 
       {enAttente ? (
         <div className="mt-3 grid grid-cols-2 gap-2 border-t p-3">

@@ -1,6 +1,8 @@
 import "server-only"
 
 import { COACH, estUnCoach, type IdCoach } from "@/lib/coachs"
+import { decalerJours, jourDe } from "@/lib/format"
+import { seancePrevue } from "@/lib/planning"
 import { semaineMenu, semaineProgramme } from "@/lib/regles"
 import type { createClient } from "@/lib/supabase/server"
 
@@ -24,6 +26,14 @@ Proposer d'enregistrer une mesure qu'il te donne (poids, douleur du pied, série
 
 Quand il te décrit une séance entière, faite aujourd'hui ou un jour passé, enregistre-la d'un bloc avec enregistrer_seance, même si ses exercices ne sont pas dans son programme ou viennent de plusieurs séances. Une séance sans code dans les séances faites est une séance hors programme. S'il veut remplacer une séance déjà enregistrée ce jour-là, passe son identifiant. S'il y en a déjà une à cette date et qu'il n'a pas dit de la remplacer, demande-lui avant d'en ajouter une seconde.
 
+## Planning, notes de séance et recalcul
+
+Ce qui est prévu chaque jour est dans l'état (prochains_jours) : c'est exactement ce que lui montre son onglet Sport. Pour dire quelle séance il fait un jour donné, lis prochains_jours, pas la semaine type. Dès que tu décides qu'il ne fait pas sa séance un jour, qu'il se repose, qu'il change de séance ou qu'il la décale, propose-le avec planifier_jours dans la même réponse : sinon l'onglet Sport continue d'afficher la séance et vous vous contredisez. Un conseil conditionnel (« si tu es fatigué, allège ») ne change pas le planning.
+
+Quand il te parle d'une séance qu'il a faite (difficulté, fatigue, douleur ou gêne, technique, motivation), garde-le avec noter_seance sur cette séance. Cette note est invisible pour lui : n'en parle pas comme d'une modification.
+
+Après chaque séance enregistrée, l'application recalcule d'elle-même ses prochaines séances à partir des précédentes et de tes notes, et lui propose les ajustements dans son onglet Sport, avec « Accepter » et « Refuser ». Ceux qui attendent sa réponse sont dans l'état (ajustements_en_attente) : ne propose pas la même chose en double, renvoie-le vers l'onglet Sport.
+
 Dans l'historique de la conversation, tes anciens messages peuvent se terminer par un bloc <suivi_application>. C'est l'application qui l'ajoute : il liste ce qui a été appliqué ou proposé à ce moment-là, avec l'identifiant d'historique à passer à l'outil d'annulation. Sers-t'en pour savoir où en est une proposition, et n'écris jamais ce bloc toi-même.
 
 ## Règles que tu ne contournes pas
@@ -39,7 +49,8 @@ N'utilise dans aucune recette un aliment qu'il a exclu : la liste est dans son p
 ## Exemples de situations
 
 - Un exercice lui fait mal : propose de le remplacer par un mouvement équivalent qui épargne la zone, avec une charge de départ cohérente. C'est un changement de structure, donc une proposition.
-- Il ne peut pas aller en salle : s'il a une séance prévue pour la maison, propose-la. Ne modifie rien.
+- Il ne peut pas aller en salle : s'il a une séance prévue pour la maison, propose de la faire à la place aujourd'hui avec planifier_jours.
+- Il est épuisé ou a mal : propose un jour de repos avec planifier_jours, et note ce qu'il dit sur sa dernière séance avec noter_seance.
 - Il demande ce qu'il mange ce soir : lis les menus du jour et réponds.
 - Il veut déplacer un repas : échange les deux cases, une par appel d'outil.`
 
@@ -60,18 +71,18 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
   depuis.setDate(depuis.getDate() - 6)
   const il_y_a_7_jours = depuis.toISOString().slice(0, 10)
 
-  const [profil, seances, plan, plats, pied, poids, seancesFaites, repas, sorties, premiers] = await Promise.all([
+  const [profil, seances, plan, plats, pied, poids, seancesFaites, repas, sorties, premiers, planning, ajustements] = await Promise.all([
     supabase.from("profiles").select("*").maybeSingle(),
     supabase
       .from("workouts")
-      .select("code, nom, lieu, jour_suggere, duree_min, workout_exercises(ordre, series, reps_min, reps_max, duree_sec, charge_depart_kg, archived, exercise:exercises(nom))")
+      .select("id, code, nom, lieu, jour_suggere, duree_min, workout_exercises(ordre, series, reps_min, reps_max, duree_sec, charge_depart_kg, archived, exercise:exercises(nom))")
       .not("archived", "is", true)
       .order("ordre"),
     supabase.from("meal_plan").select("semaine, jour, slot, meal:meals(nom)"),
     supabase.from("meals").select("nom, slot, kcal, proteines_g, tag").not("archived", "is", true),
     supabase.from("foot_logs").select("date, douleur_matin, protocole_fait").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("body_metrics").select("date, poids_kg").gte("date", il_y_a_7_jours).order("date"),
-    supabase.from("workout_logs").select("id, date, duree_min, ressenti, workout:workouts(code)").gte("date", il_y_a_7_jours).order("date"),
+    supabase.from("workout_logs").select("id, date, duree_min, ressenti, note_coach, workout:workouts(code)").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("meal_logs").select("date, slot, hors_plan, kcal_reel").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("running_logs").select("date, km, duree_min, douleur_apres, douleur_lendemain").gte("date", il_y_a_7_jours).order("date"),
     Promise.all(
@@ -79,7 +90,21 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
         supabase.from(table).select("date").order("date").limit(1)
       )
     ),
+    supabase.from("planning").select("id, date, workout_id, raison").gte("date", aujourdhui).lte("date", decalerJours(aujourdhui, 13)),
+    supabase.from("ajustements").select("resume, explication, created_at").eq("statut", "en_attente"),
   ])
+
+  // Les 14 prochains jours, calculés comme l'onglet Sport : la semaine type, sauf exception.
+  const prochainsJours = Array.from({ length: 14 }, (_, i) => {
+    const date = decalerJours(aujourdhui, i)
+    const { seance, exception } = seancePrevue(date, seances.data ?? [], planning.data ?? [])
+    return {
+      date,
+      jour: jourDe(date),
+      seance: seance ? `${seance.code} · ${seance.nom}` : "repos",
+      ...(exception ? { change_par_rapport_a_la_semaine_type: exception.raison ?? true } : {}),
+    }
+  })
 
   const debut = premiers.map((r) => r.data?.[0]?.date).filter((d): d is string => Boolean(d)).sort()[0] ?? null
   const { semaine, brute } = semaineProgramme(debut, aujourdhui)
@@ -123,6 +148,8 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
       })),
       menus: (plan.data ?? []).map((c) => `S${c.semaine} ${c.jour} ${c.slot} : ${c.meal?.nom ?? "rien"}`),
       plats: plats.data ?? [],
+      prochains_jours: prochainsJours,
+      ajustements_en_attente: ajustements.data ?? [],
       sept_derniers_jours: {
         douleur_pied_au_reveil: pied.data ?? [],
         poids: poids.data ?? [],

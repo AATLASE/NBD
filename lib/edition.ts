@@ -71,6 +71,8 @@ export const CLES_PROGRAMME = [
   "profil",
   "chat",
   "quota-ia",
+  "planning",
+  "ajustements",
 ]
 
 type Optimiste<T> = { cle: QueryKey; maj: (actuel: T) => T }
