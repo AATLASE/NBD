@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Inscription à NBD</title>
+<style>
+  /* Les messageries qui le permettent reprennent le mode sombre du site. Les autres gardent le mode clair. */
+  @media (prefers-color-scheme: dark) {
+    .fond { background-color: #0a0a0a !important; }
+    .carte { background-color: #171717 !important; border-color: #262626 !important; }
+    .texte { color: #fafafa !important; }
+    .discret { color: #a3a3a3 !important; }
+    .code { background-color: #262626 !important; color: #fafafa !important; }
+    .trait { border-color: #262626 !important; }
+    .lien { color: #ff8904 !important; }
+  }
+</style>
+</head>
+<body class="fond" style="margin: 0; padding: 0; background-color: #fafafa;">
+<!-- Aperçu affiché à côté de l'objet dans la boîte de réception. -->
+<div style="display: none; max-height: 0; overflow: hidden; opacity: 0;">Ton lien et ton code pour confirmer ton inscription à NBD. Valables une heure.</div>
+
+<table role="presentation" class="fond" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #fafafa;">
+  <tr>
+    <td align="center" style="padding: 32px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 480px; font-family: Geist, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+
+        <!-- En-tête : l'icône et le nom de l'application -->
+        <tr>
+          <td style="padding: 0 4px 20px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="vertical-align: middle;">
+                  <img src="{{ .SiteURL }}/icons/icone-192.png" width="40" height="40" alt="" style="display: block; border: 0; border-radius: 10px;">
+                </td>
+                <td class="texte" style="vertical-align: middle; padding-left: 12px; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; color: #171717;">
+                  NBD
+                  <span class="discret" style="font-weight: 400; color: #737373;">&nbsp;·&nbsp;Sport et nutrition</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Carte principale -->
+        <tr>
+          <td class="carte" style="background-color: #ffffff; border: 1px solid #e5e5e5; border-radius: 16px; padding: 28px 24px;">
+            <h1 class="texte" style="margin: 0 0 8px; font-size: 26px; line-height: 1.2; font-weight: 700; letter-spacing: -0.02em; color: #171717;">Bienvenue</h1>
+            <p class="discret" style="margin: 0 0 24px; font-size: 16px; line-height: 1.5; color: #737373;">
+              Appuie sur le bouton pour confirmer ton adresse et ouvrir ton compte. Le lien est valable une heure et ne sert qu'une fois.
+            </p>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" bgcolor="#ff6900" style="background-color: #ff6900; border-radius: 10px;">
+                  <a href="{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email" style="display: block; padding: 15px 24px; font-size: 17px; line-height: 1.2; font-weight: 600; color: #1c1917; text-decoration: none; border-radius: 10px;">Confirmer mon adresse</a>
+                </td>
+              </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr><td class="trait" style="padding-top: 28px; border-bottom: 1px solid #e5e5e5; font-size: 0; line-height: 0;">&nbsp;</td></tr>
+            </table>
+
+            <p class="texte" style="margin: 24px 0 4px; font-size: 16px; line-height: 1.4; font-weight: 600; color: #171717;">Ou saisis ce code</p>
+            <p class="discret" style="margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: #737373;">
+              À utiliser si l'application est installée sur ton écran d'accueil : le lien s'ouvrirait dans le navigateur, pas dans l'application.
+            </p>
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="code" align="center" style="background-color: #f5f5f5; border-radius: 12px; padding: 16px 8px 16px 16px; font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 32px; line-height: 1.2; font-weight: 700; letter-spacing: 8px; color: #171717;">{{ .Token }}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <!-- Pied de page : rappel vers le site -->
+        <tr>
+          <td align="center" style="padding: 24px 12px 0;">
+            <p class="discret" style="margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: #737373;">
+              Si tu n'es pas à l'origine de cette inscription, ignore ce message : sans confirmation, le compte reste inactif.
+            </p>
+            <p class="texte" style="margin: 0 0 4px; font-size: 14px; line-height: 1.5; font-weight: 600; color: #171717;">NBD · Sport et nutrition</p>
+            <p style="margin: 0; font-size: 14px; line-height: 1.5;">
+              <a class="lien" href="{{ .SiteURL }}" style="color: #ca3500; font-weight: 500; text-decoration: underline;">{{ .SiteURL }}</a>
+            </p>
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

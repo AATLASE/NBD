@@ -99,14 +99,14 @@ function FormulaireCode({ email }: { email: string }) {
     <form action={action} className="space-y-4 border-t pt-6">
       <input type="hidden" name="email" value={email} />
       <div className="space-y-2">
-        <Label htmlFor="code">Ou saisis le code à 6 chiffres du message</Label>
+        <Label htmlFor="code">Ou saisis le code du message</Label>
         <Input
           id="code"
           name="code"
           inputMode="numeric"
           autoComplete="one-time-code"
-          pattern="[0-9]{6}"
-          maxLength={6}
+          pattern="[0-9]{6,10}"
+          maxLength={10}
           required
           aria-invalid={erreur ? true : undefined}
           aria-describedby={erreur ? "code-erreur" : "code-aide"}

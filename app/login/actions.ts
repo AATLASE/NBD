@@ -65,15 +65,16 @@ export async function envoyerLienMagique(
   }
 }
 
-// Connexion par le code à 6 chiffres du même message : la session s'ouvre là où le code est
-// saisi, ce qui est le seul moyen de se connecter dans l'application installée sur iOS.
+// Connexion par le code du même message : la session s'ouvre là où le code est saisi, ce qui
+// est le seul moyen de se connecter dans l'application installée sur iOS.
+// Sa longueur se règle côté Supabase, entre 6 et 10 chiffres : on accepte toute cette plage.
 export async function verifierCode(_etat: EtatConnexion, formData: FormData): Promise<EtatConnexion> {
   const email = String(formData.get("email") ?? "")
     .trim()
     .toLowerCase()
   const code = String(formData.get("code") ?? "").replace(/\s/g, "")
-  if (!EMAIL_VALIDE.test(email) || !/^\d{6}$/.test(code)) {
-    return { statut: "erreur", message: "Le code fait 6 chiffres.", email }
+  if (!EMAIL_VALIDE.test(email) || !/^\d{6,10}$/.test(code)) {
+    return { statut: "erreur", message: "Recopie tous les chiffres du code reçu.", email }
   }
 
   const supabase = await createClient()

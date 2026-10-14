@@ -245,19 +245,31 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Lien magique : même gabarit pour la première connexion (confirmation) et les suivantes (magic_link).
+# Lien magique : un gabarit pour la première connexion (confirmation), un autre pour les suivantes (magic_link).
 [auth.email.template.confirmation]
-subject = "Ton lien de connexion"
-content_path = "./supabase/templates/magic_link.html"
+subject = "Confirme ton inscription à NBD"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.magic_link]
 subject = "Ton lien de connexion"
 content_path = "./supabase/templates/magic_link.html"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Les autres messages reprennent la même mise en page. L'application n'en déclenche aucun pour l'instant.
+[auth.email.template.invite]
+subject = "Ton invitation à NBD"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.email_change]
+subject = "Confirme ta nouvelle adresse email"
+content_path = "./supabase/templates/email_change.html"
+
+[auth.email.template.recovery]
+subject = "Ton lien pour changer de mot de passe"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.reauthentication]
+subject = "Ton code de vérification"
+content_path = "./supabase/templates/reauthentication.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
