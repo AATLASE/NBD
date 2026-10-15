@@ -16,7 +16,7 @@ import { useAujourdhui } from "@/lib/aujourdhui"
 import type { Tables } from "@/lib/database.types"
 import { useEdition } from "@/lib/edition"
 import { differable } from "@/lib/file-attente"
-import { dateLongue, jourDe } from "@/lib/format"
+import { dateLongue, jourDe, nombre } from "@/lib/format"
 import { JOURS, LIBELLE_SLOT, SLOTS, majuscule, type Slot } from "@/lib/libelles"
 import { echangerRepas, remplacerRepas, retirerRepas } from "@/lib/mutations"
 import { useDebutProgramme, useJournalRepas, usePlanRepas, useRepas, type CasePlan, type Repas } from "@/lib/queries"
@@ -137,6 +137,31 @@ export default function Menus() {
                 <Etiquette ton="success">Pris</Etiquette>
               ) : null
 
+              // Une fois noté, on montre ce qui a été mangé ; le plat prévu reste rappelé s'il diffère.
+              const platMange = log?.meal_id ? repas.data?.find((r) => r.id === log.meal_id) : undefined
+              const mange = log?.hors_plan
+                ? {
+                    nom: log.note ?? "Repas hors plan",
+                    detail: `${nombre(log.kcal_reel ?? 0)} kcal · ${log.proteines_reel ?? 0} g de protéines`,
+                  }
+                : platMange
+                  ? { nom: platMange.nom, detail: macros(platMange) }
+                  : null
+              const prevuDifferent = mange && casePlan?.meal && (log?.hors_plan || log?.meal_id !== casePlan.meal.id)
+              const affiche = mange ?? (casePlan?.meal ? { nom: casePlan.meal.nom, detail: macros(casePlan.meal) } : null)
+              const contenu = (
+                <span className="min-w-0 flex-1 space-y-0.5">
+                  <span className="block text-sm font-semibold text-brand">{libelle}</span>
+                  <span className={affiche ? "block leading-snug font-medium" : "block text-muted-foreground"}>
+                    {affiche?.nom ?? "Rien de prévu"}
+                  </span>
+                  {affiche && <span className="block text-sm text-muted-foreground tabular-nums">{affiche.detail}</span>}
+                  {prevuDifferent && (
+                    <span className="block text-sm text-muted-foreground">Prévu : {casePlan!.meal!.nom}</span>
+                  )}
+                </span>
+              )
+
               const caseACocher = notable && (
                 <button
                   type="button"
@@ -162,10 +187,7 @@ export default function Menus() {
               if (!casePlan) {
                 return (
                   <li key={slot} className="flex min-h-16 items-center gap-3 px-4 py-3">
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-semibold text-brand">{libelle}</span>
-                      <span className="block text-muted-foreground">Rien de prévu</span>
-                    </span>
+                    {contenu}
                     {etat}
                   </li>
                 )
@@ -182,21 +204,7 @@ export default function Menus() {
                       !caseACocher && "pl-4"
                     )}
                   >
-                    <span className="min-w-0 flex-1 space-y-0.5">
-                      <span className="block text-sm font-semibold text-brand">{libelle}</span>
-                      <span
-                        className={
-                          casePlan.meal ? "block leading-snug font-medium" : "block text-muted-foreground"
-                        }
-                      >
-                        {casePlan.meal?.nom ?? "Rien de prévu"}
-                      </span>
-                      {casePlan.meal && (
-                        <span className="block text-sm text-muted-foreground tabular-nums">
-                          {macros(casePlan.meal)}
-                        </span>
-                      )}
-                    </span>
+                    {contenu}
                     {etat}
                     <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
                   </button>

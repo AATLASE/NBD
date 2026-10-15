@@ -536,6 +536,75 @@ export function creerOutils(c: Contexte) {
       },
     }),
 
+    // ----- Journal des repas : ce qu'il a réellement mangé -----
+    betaZodTool({
+      name: "noter_repas",
+      description:
+        "Enregistre ce qu'il a réellement mangé, aujourd'hui ou un jour passé (AAAA-MM-JJ), repas par repas. Les menus ne sont pas modifiés. " +
+        "Pour un plat de sa liste (celui du menu ou un autre), donne meal_id (lu avec get_programme nutrition). " +
+        "Pour autre chose (restaurant, plat improvisé), donne une description courte et une estimation réaliste des calories et des protéines, sans meal_id. " +
+        "Un repas déjà noté ce jour-là est remplacé.",
+      inputSchema: z.object({
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        repas: z
+          .array(
+            z.object({
+              slot: z.enum(SLOTS),
+              meal_id: z.uuid().nullable().optional(),
+              description: z.string().min(2).max(200).nullable().optional(),
+              kcal: z.number().int().min(0).max(5000).nullable().optional(),
+              proteines_g: z.number().int().min(0).max(400).nullable().optional(),
+            })
+          )
+          .min(1)
+          .max(SLOTS.length),
+      }),
+      run: async ({ date, repas }) => {
+        if (date > c.aujourdhui) return "REFUS : on ne note pas un repas à l'avance."
+        if (new Set(repas.map((r) => r.slot)).size !== repas.length) return "Un même repas apparaît deux fois : un seul par moment de la journée."
+        const idsPlats = repas.flatMap((r) => (r.meal_id ? [r.meal_id] : []))
+        const [{ data: plats }, { data: dejaNotes }] = await Promise.all([
+          idsPlats.length ? db.from("meals").select("id, nom, kcal, proteines_g").in("id", idsPlats) : Promise.resolve({ data: [] }),
+          db.from("meal_logs").select("id, slot, meal_id, hors_plan, kcal_reel, note, meal:meals(nom)").eq("date", date),
+        ])
+        const parPlat = new Map((plats ?? []).map((p) => [p.id, p]))
+        const changements: ChangementChat[] = []
+        const diff: LigneDiff[] = []
+        for (const r of repas) {
+          const plat = r.meal_id ? parPlat.get(r.meal_id) : undefined
+          if (r.meal_id && !plat) return `Plat introuvable pour « ${LIBELLE_SLOT[r.slot]} ». Relis la liste avec get_programme nutrition.`
+          if (!plat && (!r.description || r.kcal == null || r.proteines_g == null)) {
+            return `Pour « ${LIBELLE_SLOT[r.slot]} », donne soit meal_id, soit une description avec une estimation des calories et des protéines.`
+          }
+          const data = plat
+            ? { meal_id: plat.id, hors_plan: false, kcal_reel: null, proteines_reel: null, note: null }
+            : { meal_id: null, hors_plan: true, kcal_reel: r.kcal, proteines_reel: r.proteines_g, note: r.description!.trim() }
+          const existant = (dejaNotes ?? []).find((l) => l.slot === r.slot)
+          changements.push(
+            existant
+              ? { table: "meal_logs", operation: "update", id: existant.id, data }
+              : { table: "meal_logs", operation: "insert", id: crypto.randomUUID(), data: { date, slot: r.slot, ...data } }
+          )
+          diff.push({
+            titre: LIBELLE_SLOT[r.slot] ?? r.slot,
+            avant: existant
+              ? existant.hors_plan
+                ? `Hors plan${existant.note ? ` : ${existant.note}` : ""}${existant.kcal_reel !== null ? `, ${existant.kcal_reel} kcal` : ""}`
+                : (existant.meal?.nom ?? "Repas noté")
+              : null,
+            apres: plat ? `${plat.nom} (${plat.kcal} kcal)` : `${r.description!.trim()} : ${r.kcal} kcal, ${r.proteines_g} g de protéines`,
+          })
+        }
+        return soumettre(c, {
+          changements,
+          resume: `Repas du ${dateCourte(date)} : ${repas.length} repas noté${repas.length > 1 ? "s" : ""}`,
+          diff,
+          // C'est un relevé, pas le programme : pas de quota.
+          quota: false,
+        })
+      },
+    }),
+
     // ----- Mesures : gratuites, ce ne sont pas des modifications du programme -----
     betaZodTool({
       name: "log_poids",

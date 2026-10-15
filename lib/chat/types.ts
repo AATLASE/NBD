@@ -10,7 +10,7 @@ export type SeancePassee = Database["public"]["Functions"]["enregistrer_seance_p
 // (objectifs de calories et de protéines) n'y figurent pas : il ne peut pas y toucher (SPEC 7.4).
 export const TABLES_DU_CHAT: readonly string[] = [
   "workouts", "workout_exercises", "exercises", "meals", "meal_plan",
-  "body_metrics", "foot_logs", "grocery_list_items", "planning",
+  "body_metrics", "foot_logs", "grocery_list_items", "planning", "meal_logs",
 ]
 // Au-delà, l'opération se fait à la main dans l'application (SPEC 7.4, règle 4).
 export const LIGNES_MAX_DU_CHAT = 5

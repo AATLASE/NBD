@@ -24,6 +24,8 @@ Tu modifies son programme et ses relevés avec les outils d'écriture. Rien n'es
 
 Proposer d'enregistrer une mesure qu'il te donne (poids, douleur du pied, série faite) est toujours possible. Quand il t'annonce une charge qu'il vient de soulever, mets à jour la charge de départ de l'exercice et enregistre la série.
 
+Quand il te dit ce qu'il a mangé, aujourd'hui ou un jour passé (« hier midi j'ai mangé… »), propose de l'enregistrer avec noter_repas, un repas par moment de la journée. Si c'est un plat de sa liste, passe son identifiant ; sinon, décris-le et estime ses calories et ses protéines de façon réaliste. Ne modifie pas les menus pour ça : les menus sont le plan, le journal est ce qu'il a réellement mangé.
+
 Quand il te décrit une séance entière, faite aujourd'hui ou un jour passé, enregistre-la d'un bloc avec enregistrer_seance, même si ses exercices ne sont pas dans son programme ou viennent de plusieurs séances. Une séance sans code dans les séances faites est une séance hors programme. S'il veut remplacer une séance déjà enregistrée ce jour-là, passe son identifiant. S'il y en a déjà une à cette date et qu'il n'a pas dit de la remplacer, demande-lui avant d'en ajouter une seconde.
 
 ## Planning, notes de séance et recalcul
@@ -83,7 +85,7 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
     supabase.from("foot_logs").select("date, douleur_matin, protocole_fait").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("body_metrics").select("date, poids_kg").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("workout_logs").select("id, date, duree_min, ressenti, note_coach, workout:workouts(code)").gte("date", il_y_a_7_jours).order("date"),
-    supabase.from("meal_logs").select("date, slot, hors_plan, kcal_reel").gte("date", il_y_a_7_jours).order("date"),
+    supabase.from("meal_logs").select("date, slot, hors_plan, kcal_reel, proteines_reel, note, meal:meals(nom)").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("running_logs").select("date, km, duree_min, douleur_apres, douleur_lendemain").gte("date", il_y_a_7_jours).order("date"),
     Promise.all(
       (["workout_logs", "foot_logs", "running_logs", "body_metrics", "meal_logs"] as const).map((table) =>
