@@ -120,6 +120,7 @@ function Formulaire({
   )
   const [ouverte, setOuverte] = useState<string | null>(null)
   const [dureeMin, setDureeMin] = useState(seance.duree_min)
+  const [commentaire, setCommentaire] = useState("")
 
   const modifier = (id: string, maj: Partial<Saisie>) => setSaisies((s) => ({ ...s, [id]: { ...s[id]!, ...maj } }))
   const series = seance.workout_exercises.flatMap((ligne) => {
@@ -137,7 +138,15 @@ function Formulaire({
 
   async function enregistrer() {
     const resultat = await executer(() =>
-      enregistrerSeanceApresCoup({ id: crypto.randomUUID(), workoutId: seance.id, date, dureeMin, ressenti: null, series })
+      enregistrerSeanceApresCoup({
+        id: crypto.randomUUID(),
+        workoutId: seance.id,
+        date,
+        dureeMin,
+        ressenti: null,
+        series,
+        note: commentaire.trim() || null,
+      })
     )
     if (resultat.ok) onFermer()
   }
@@ -218,6 +227,22 @@ function Formulaire({
       </ul>
 
       <Stepper libelle="Durée de la séance" valeur={dureeMin} unite="min" pas={5} min={5} max={600} onChange={setDureeMin} />
+
+      <div className="space-y-2">
+        <label htmlFor="commentaire-apres-coup" className="font-semibold">
+          Commentaire
+        </label>
+        <textarea
+          id="commentaire-apres-coup"
+          value={commentaire}
+          maxLength={1000}
+          rows={3}
+          onChange={(evenement) => setCommentaire(evenement.target.value)}
+          placeholder="Sensations, fatigue, douleur, technique…"
+          className="min-h-24 w-full resize-y rounded-2xl border bg-card px-4 py-3 text-base leading-6 outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        />
+        <p className="text-sm text-muted-foreground">Facultatif. Ton coach en tient compte pour ajuster tes prochaines séances.</p>
+      </div>
 
       <Button className="h-14 w-full text-lg font-semibold" disabled={enCours || series.length === 0} onClick={enregistrer}>
         {series.length === 0

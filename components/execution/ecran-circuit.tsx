@@ -39,7 +39,7 @@ function avancer(
         ...series,
         [ligne.id]: [
           ...(series[ligne.id] ?? []),
-          { charge: ligne.charge_depart_kg, reps: null, duree: ligne.duree_sec, rir: null },
+          { charge: ligne.charge_depart_kg, reps: null, duree: ligne.duree_sec, rir: null, fin: maintenant },
         ],
       }
     }

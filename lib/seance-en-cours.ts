@@ -11,6 +11,8 @@ export type SerieFaite = {
   reps: number | null
   duree: number | null
   rir: number | null
+  // Heure de validation (ms). Absente sur les séances commencées avant son ajout.
+  fin?: number
 }
 
 export type Repos = { fin: number; total: number }

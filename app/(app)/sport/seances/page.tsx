@@ -1,6 +1,6 @@
 "use client"
 
-import { BedDouble, Check, ClipboardCheck, Dumbbell, Moon, Pencil, Plus } from "lucide-react"
+import { BedDouble, Check, ClipboardCheck, Dumbbell, FileBarChart, Moon, Pencil, Plus } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
@@ -12,9 +12,11 @@ import { LienHistorique } from "@/components/lien-historique"
 import { AjustementsProposes } from "@/components/sport/ajustements"
 import { BoutonDemarrer } from "@/components/sport/bouton-demarrer"
 import { ExceptionPlanning } from "@/components/sport/exception-planning"
+import { RapportSeance, usePoidsLe } from "@/components/sport/rapport-seance"
 import { SaisieApresCoup } from "@/components/sport/saisie-apres-coup"
 import { CarteSeance } from "@/components/sport/seance"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useAujourdhui } from "@/lib/aujourdhui"
 import type { Tables } from "@/lib/database.types"
 import { useEdition } from "@/lib/edition"
@@ -23,7 +25,14 @@ import { dateLongue, jourDe } from "@/lib/format"
 import { majuscule } from "@/lib/libelles"
 import { creerSeance, planifierJour } from "@/lib/mutations"
 import { seanceDeLaSemaineType, seancePrevue, type Exception } from "@/lib/planning"
-import { useJournalSeances, usePlanning, useSeances, useSeriesSeance, type Seance } from "@/lib/queries"
+import {
+  useHistoriqueExercices,
+  useJournalSeances,
+  usePlanning,
+  useSeances,
+  useSeriesSeance,
+  type Seance,
+} from "@/lib/queries"
 
 // Code court d'une séance pour la marque du calendrier, comme sa pastille.
 const codeCourt = (code: string) => (code.length <= 2 ? code : code.charAt(0))
@@ -215,6 +224,7 @@ function SeancePrevue({ seance, jour, demarrable }: { seance: Seance; jour: stri
 // Une séance enregistrée ce jour-là, avec ses séries exercice par exercice.
 function SeanceFaite({ log, seance }: { log: Tables<"workout_logs">; seance: Seance | undefined }) {
   const series = useSeriesSeance(log.id)
+  const [rapport, setRapport] = useState(false)
   const titre = !log.workout_id
     ? "Séance hors programme"
     : seance
@@ -264,18 +274,80 @@ function SeanceFaite({ log, seance }: { log: Tables<"workout_logs">; seance: Sea
           })}
         </ul>
       ) : null}
-      {log.note && <p className="border-t px-4 py-3 text-sm text-muted-foreground">{log.note}</p>}
-      {seance && (
-        <div className="border-t p-3">
+      {log.note && (
+        <div className="border-t px-4 py-3">
+          <p className="text-sm font-semibold text-brand">Ton commentaire</p>
+          <p className="leading-snug whitespace-pre-line">{log.note}</p>
+        </div>
+      )}
+      <div className="space-y-2 border-t p-3">
+        <Button
+          variant="outline"
+          className="h-12 w-full gap-2 text-base"
+          disabled={!series.data?.length}
+          onClick={() => setRapport(true)}
+        >
+          <FileBarChart className="size-4" aria-hidden="true" />
+          Voir le rapport
+        </Button>
+        {seance && (
           <Link
             href={`/sport/seances/${seance.id}?edition=1`}
-            className={buttonVariants({ variant: "outline", className: "h-12 w-full gap-2 text-base" })}
+            className={buttonVariants({ variant: "ghost", className: "h-11 w-full gap-2 text-base" })}
           >
             <Pencil className="size-4" aria-hidden="true" />
             Modifier la séance {seance.code}
           </Link>
-        </div>
-      )}
+        )}
+      </div>
+
+      <Sheet open={rapport} onOpenChange={setRapport}>
+        <SheetContent
+          side="bottom"
+          className="mx-auto max-h-[92dvh] max-w-lg gap-0 overflow-y-auto rounded-t-3xl pb-[calc(1rem+env(safe-area-inset-bottom))] text-base"
+        >
+          <SheetHeader className="pr-14">
+            <SheetDescription className="text-sm font-semibold text-brand">{dateLongue(log.date)}</SheetDescription>
+            <SheetTitle className="text-xl font-bold">{titre}</SheetTitle>
+          </SheetHeader>
+          <div className="px-4">{rapport && series.data && <RapportDeLaSeance log={log} series={series.data} />}</div>
+        </SheetContent>
+      </Sheet>
     </Carte>
+  )
+}
+
+// Le rapport d'une séance déjà enregistrée, recalculé depuis la base.
+function RapportDeLaSeance({
+  log,
+  series,
+}: {
+  log: Tables<"workout_logs">
+  series: NonNullable<ReturnType<typeof useSeriesSeance>["data"]>
+}) {
+  const poids = usePoidsLe(log.date)
+  const historique = useHistoriqueExercices(series.map((s) => s.exercise_id))
+  return (
+    <RapportSeance
+      series={series.map((s) => ({
+        exerciseId: s.exercise_id,
+        nom: s.exercise.nom,
+        groupe: s.exercise.groupe,
+        charge: s.charge_kg,
+        reps: s.reps,
+        duree: s.duree_sec,
+        fin: s.terminee_a ? Date.parse(s.terminee_a) : null,
+        reposPrevuSec: s.workout_exercise?.repos_sec ?? null,
+        bloc: s.workout_exercise?.bloc === "circuit" ? "circuit" : "series",
+      }))}
+      debut={log.debut_a ? Date.parse(log.debut_a) : null}
+      dureeMin={log.duree_min}
+      kcalMontre={log.kcal}
+      poidsKg={poids}
+      // Seules les séances d'avant comptent pour les records : ni celle-ci, ni les suivantes.
+      historique={historique.data
+        ?.filter((h) => h.workout_log_id !== log.id && h.workout_log && h.workout_log.date <= log.date)
+        .map((h) => ({ exerciseId: h.exercise_id, charge: h.charge_kg, reps: h.reps, duree: h.duree_sec }))}
+    />
   )
 }

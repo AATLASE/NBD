@@ -60,7 +60,8 @@ export function EcranExercice({
     preparerSignal()
     modifierBrouillon((b) => {
       const series = [...(b.series[ligne.id] ?? [])]
-      series[index] = serie
+      // Corriger une série garde son heure d'origine : c'est elle qui sert au temps détaillé.
+      series[index] = { ...serie, fin: series[index]?.fin ?? Date.now() }
       return {
         ...b,
         series: { ...b.series, [ligne.id]: series },

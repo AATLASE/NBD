@@ -973,7 +973,7 @@ export async function importerPlanNutrition(brut: unknown): Promise<ResultatEdit
 // quel exercice du programme chacune correspond.
 export type ActiviteAImporter =
   | { vers: "course"; date: string; km: number; dureeMin: number; douleurApres: number }
-  | { vers: "seance"; workoutId: string; date: string; dureeMin: number; note: string | null }
+  | { vers: "seance"; workoutId: string; date: string; dureeMin: number; note: string | null; kcal?: number | null }
 
 export async function importerActivite(activite: ActiviteAImporter): Promise<ResultatEdition> {
   if (typeof activite !== "object" || activite === null) return INVALIDE
@@ -1000,24 +1000,39 @@ export async function importerActivite(activite: ActiviteAImporter): Promise<Res
     )
   }
 
-  if (activite.vers !== "seance" || !UUID.test(activite.workoutId) || !ouNul(texte(0, 300))(activite.note)) {
+  if (
+    activite.vers !== "seance" ||
+    !UUID.test(activite.workoutId) ||
+    !ouNul(texte(0, 300))(activite.note) ||
+    !(activite.kcal === undefined || ouNul(entier(0, 5000))(activite.kcal))
+  ) {
     return INVALIDE
   }
   const { data: seance } = await supabase.from("workouts").select("code").eq("id", activite.workoutId).maybeSingle()
   if (!seance) return INTROUVABLE
 
+  // Déjà faite avec l'application ce jour-là : la montre la complète au lieu de la dupliquer.
+  const { data: deja } = await supabase
+    .from("workout_logs")
+    .select("id")
+    .eq("workout_id", activite.workoutId)
+    .eq("date", activite.date)
+    .limit(1)
   const { data, error } = await supabase.rpc("enregistrer_seance_importee", {
     p_workout_id: activite.workoutId,
     p_date: activite.date,
     p_duree_min: activite.dureeMin,
     // La colonne accepte null ; le type généré ne le reflète pas pour les arguments de fonction.
     p_note: (activite.note?.trim() || null) as string,
+    p_kcal: activite.kcal ?? undefined,
   })
   if (error) return echec(error)
   return {
     ok: true,
     groupeId: data,
-    resume: `Séance ${seance.code} importée de la montre : ${activite.dureeMin} min`,
+    resume: deja?.length
+      ? `Séance ${seance.code} complétée par la montre${activite.kcal ? ` : ${activite.kcal} kcal` : ""}`
+      : `Séance ${seance.code} importée de la montre : ${activite.dureeMin} min`,
   }
 }
 
@@ -1372,6 +1387,8 @@ export type SerieAEnregistrer = {
   reps: number | null
   duree_sec: number | null
   rir: number | null
+  // Heure de validation de la série (ISO), pour le temps détaillé du rapport.
+  terminee_a?: string | null
 }
 
 export type SeanceAEnregistrer = {
@@ -1382,7 +1399,13 @@ export type SeanceAEnregistrer = {
   dureeMin: number
   ressenti: number | null
   series: SerieAEnregistrer[]
+  // Commentaire de l'utilisateur, visible dans le calendrier et lu par le recalcul.
+  note?: string | null
+  // Heure de début (ISO).
+  debut?: string | null
 }
+
+const HORODATAGE = (v: unknown) => v === undefined || v === null || (typeof v === "string" && !Number.isNaN(Date.parse(v)))
 
 const MAX_SERIES = 200
 
@@ -1393,7 +1416,8 @@ function serieValide(s: SerieAEnregistrer) {
     ouNul(decimal(0, 1000))(s.charge_kg) &&
     ouNul(entier(0, 999))(s.reps) &&
     ouNul(entier(1, 7200))(s.duree_sec) &&
-    ouNul(entier(0, 5))(s.rir)
+    ouNul(entier(0, 5))(s.rir) &&
+    HORODATAGE(s.terminee_a)
   )
 }
 
@@ -1407,7 +1431,9 @@ export async function enregistrerSeance(seance: SeanceAEnregistrer): Promise<Res
     Array.isArray(seance.series) &&
     seance.series.length > 0 &&
     seance.series.length <= MAX_SERIES &&
-    seance.series.every(serieValide)
+    seance.series.every(serieValide) &&
+    (seance.note === undefined || ouNul(texte(0, 1000))(seance.note)) &&
+    HORODATAGE(seance.debut)
   if (!valide) {
     return { ok: false, message: "Séance invalide : rien n'a été enregistré." }
   }
@@ -1422,6 +1448,8 @@ export async function enregistrerSeance(seance: SeanceAEnregistrer): Promise<Res
     p_ressenti: seance.ressenti as number,
     p_series: seance.series,
     p_source: "user",
+    p_note: seance.note?.trim() || undefined,
+    p_debut: seance.debut ?? undefined,
   })
 
   if (error) {

@@ -327,14 +327,14 @@ isOneToOne: false
                   ]
                 },"set_logs": {
                   Row: {
-                    "charge_kg": number | null,"duree_sec": number | null,"exercise_id": string,"id": string,"reps": number | null,"rir": number | null,"serie_num": number,"workout_exercise_id": string | null,"workout_log_id": string
+                    "charge_kg": number | null,"duree_sec": number | null,"exercise_id": string,"id": string,"reps": number | null,"rir": number | null,"serie_num": number,"terminee_a": string | null,"workout_exercise_id": string | null,"workout_log_id": string
                   }
                   ComputedFields: never
                   Insert: {
-                    "charge_kg"?: number | null,"duree_sec"?: number | null,"exercise_id"?: string,"id"?: string,"reps"?: number | null,"rir"?: number | null,"serie_num": number,"workout_exercise_id"?: string | null,"workout_log_id": string
+                    "charge_kg"?: number | null,"duree_sec"?: number | null,"exercise_id"?: string,"id"?: string,"reps"?: number | null,"rir"?: number | null,"serie_num": number,"terminee_a"?: string | null,"workout_exercise_id"?: string | null,"workout_log_id": string
                   }
                   Update: {
-                    "charge_kg"?: number | null,"duree_sec"?: number | null,"exercise_id"?: string,"id"?: string,"reps"?: number | null,"rir"?: number | null,"serie_num"?: number,"workout_exercise_id"?: string | null,"workout_log_id"?: string
+                    "charge_kg"?: number | null,"duree_sec"?: number | null,"exercise_id"?: string,"id"?: string,"reps"?: number | null,"rir"?: number | null,"serie_num"?: number,"terminee_a"?: string | null,"workout_exercise_id"?: string | null,"workout_log_id"?: string
                   }
                   Relationships: [
                     {
@@ -385,14 +385,14 @@ isOneToOne: false
                   ]
                 },"workout_logs": {
                   Row: {
-                    "date": string,"duree_min": number | null,"id": string,"note": string | null,"note_coach": string | null,"ressenti": number | null,"user_id": string,"workout_id": string | null
+                    "date": string,"debut_a": string | null,"duree_min": number | null,"id": string,"kcal": number | null,"note": string | null,"note_coach": string | null,"ressenti": number | null,"user_id": string,"workout_id": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "date"?: string,"duree_min"?: number | null,"id"?: string,"note"?: string | null,"note_coach"?: string | null,"ressenti"?: number | null,"user_id": string,"workout_id"?: string | null
+                    "date"?: string,"debut_a"?: string | null,"duree_min"?: number | null,"id"?: string,"kcal"?: number | null,"note"?: string | null,"note_coach"?: string | null,"ressenti"?: number | null,"user_id": string,"workout_id"?: string | null
                   }
                   Update: {
-                    "date"?: string,"duree_min"?: number | null,"id"?: string,"note"?: string | null,"note_coach"?: string | null,"ressenti"?: number | null,"user_id"?: string,"workout_id"?: string | null
+                    "date"?: string,"debut_a"?: string | null,"duree_min"?: number | null,"id"?: string,"kcal"?: number | null,"note"?: string | null,"note_coach"?: string | null,"ressenti"?: number | null,"user_id"?: string,"workout_id"?: string | null
                   }
                   Relationships: [
                     {
@@ -430,13 +430,13 @@ isOneToOne: false
 { Args: { "p_changements": Json,"p_resume": string,"p_source"?: string }; Returns: string
                            },
 "enregistrer_seance":
-{ Args: { "p_date": string,"p_duree_min": number,"p_id": string,"p_ressenti": number,"p_series": Json,"p_source"?: string,"p_workout_id": string }; Returns: string
+{ Args: { "p_date": string,"p_debut"?: string,"p_duree_min": number,"p_id": string,"p_note"?: string,"p_ressenti": number,"p_series": Json,"p_source"?: string,"p_workout_id": string }; Returns: string
                            },
 "enregistrer_seance_passee":
 { Args: { "p_date": string,"p_duree_min"?: number,"p_exercices"?: Json,"p_id": string,"p_note"?: string,"p_remplace"?: string,"p_resume": string,"p_series": Json,"p_source"?: string,"p_workout_id"?: string }; Returns: string
                            },
 "enregistrer_seance_importee":
-{ Args: { "p_date": string,"p_duree_min": number,"p_note": string,"p_workout_id": string }; Returns: string
+{ Args: { "p_date": string,"p_duree_min": number,"p_kcal"?: number,"p_note": string,"p_workout_id": string }; Returns: string
                            },
 "etat_demandes_ia":
 { Args: Record<PropertyKey, never>; Returns: {

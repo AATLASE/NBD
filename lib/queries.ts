@@ -73,9 +73,20 @@ function lireSeriesSeance(logId: string) {
   return liste(
     db()
       .from("set_logs")
-      .select("id, serie_num, charge_kg, reps, duree_sec, exercise_id, exercise:exercises(nom)")
+      .select("id, serie_num, charge_kg, reps, duree_sec, exercise_id, terminee_a, exercise:exercises(nom, groupe), workout_exercise:workout_exercises(repos_sec, bloc)")
       .eq("workout_log_id", logId)
       .order("serie_num")
+  )
+}
+
+// Toutes les séries passées de ces exercices : de quoi trouver les records personnels.
+function lireHistoriqueExercices(ids: string[]) {
+  return liste(
+    db()
+      .from("set_logs")
+      .select("exercise_id, charge_kg, reps, duree_sec, workout_log_id, workout_log:workout_logs(date)")
+      .in("exercise_id", ids)
+      .limit(5000)
   )
 }
 
@@ -216,6 +227,14 @@ export const useHistoriqueSeries = () =>
   useQuery({ queryKey: ["historique-series"], queryFn: lireHistoriqueSeries })
 export const useSeriesSeance = (logId: string) =>
   useQuery({ queryKey: ["series-seance", logId], queryFn: () => lireSeriesSeance(logId) })
+export const useHistoriqueExercices = (ids: string[]) => {
+  const tries = [...new Set(ids)].sort()
+  return useQuery({
+    queryKey: ["historique-exercices", ...tries],
+    queryFn: () => lireHistoriqueExercices(tries),
+    enabled: tries.length > 0,
+  })
+}
 export const useExercices = () => useQuery({ queryKey: ["exercices"], queryFn: lireExercices })
 export const useModifications = () =>
   useQuery({ queryKey: ["modifications"], queryFn: lireModifications })

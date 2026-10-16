@@ -84,7 +84,7 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
     supabase.from("meals").select("nom, slot, kcal, proteines_g, tag").not("archived", "is", true),
     supabase.from("foot_logs").select("date, douleur_matin, protocole_fait").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("body_metrics").select("date, poids_kg").gte("date", il_y_a_7_jours).order("date"),
-    supabase.from("workout_logs").select("id, date, duree_min, ressenti, note_coach, workout:workouts(code)").gte("date", il_y_a_7_jours).order("date"),
+    supabase.from("workout_logs").select("id, date, duree_min, ressenti, note, note_coach, workout:workouts(code)").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("meal_logs").select("date, slot, hors_plan, kcal_reel, proteines_reel, note, meal:meals(nom)").gte("date", il_y_a_7_jours).order("date"),
     supabase.from("running_logs").select("date, km, duree_min, douleur_apres, douleur_lendemain").gte("date", il_y_a_7_jours).order("date"),
     Promise.all(

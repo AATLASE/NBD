@@ -42,7 +42,7 @@ const Reponse = z.object({
   ),
 })
 
-const CONSIGNE = `Tu ajustes le programme de musculation d'un utilisateur juste après une séance. Tu reçois la séance qui vient d'être faite, les précédentes sur les mêmes exercices, l'effort ressenti, les répétitions en réserve (RIR) quand elles sont notées, les notes prises par son coach sur ce qu'il a dit, la douleur de son pied et les lignes du programme concernées.
+const CONSIGNE = `Tu ajustes le programme de musculation d'un utilisateur juste après une séance. Tu reçois la séance qui vient d'être faite, les précédentes sur les mêmes exercices, l'effort ressenti, les répétitions en réserve (RIR) quand elles sont notées, son commentaire de fin de séance, les notes prises par son coach sur ce qu'il a dit, la douleur de son pied et les lignes du programme concernées.
 
 Pour chaque ligne, décide s'il faut changer la charge de départ, le nombre de séries, les répétitions, la durée ou le repos de la prochaine fois. Mets null pour tout ce qui ne change pas, et n'inclus pas une ligne qui ne change pas du tout.
 
@@ -50,7 +50,7 @@ Règles :
 - Progresse quand c'est mérité : toutes les répétitions prévues faites avec de la marge (RIR de 2 ou plus, ou effort ressenti facile). Une seule étape à la fois, de la valeur de l'incrément de l'exercice.
 - Allège quand c'est trop dur : répétitions manquées, RIR à 0 sur plusieurs séries, effort ressenti très dur, fatigue ou douleur dans les notes.
 - Sans signal clair, ne change rien. Ne pas proposer d'ajustement est une bonne réponse.
-- Douleur, gêne ou blessure dans les notes : jamais de hausse sur les exercices qui sollicitent la zone.
+- Douleur, gêne ou blessure dans son commentaire ou les notes : jamais de hausse sur les exercices qui sollicitent la zone.
 - Tu ne changes que les lignes reçues. Pas d'ajout, de retrait ni de remplacement d'exercice.
 
 L'explication tient en deux phrases au plus, en français, en tutoyant l'utilisateur. Elle dit ce que tu changes et pourquoi, à partir de ce qu'il a fait.`
@@ -121,7 +121,7 @@ export async function recalculerApresSeance(supabase: Client, logId: string, { f
 async function recalculer(supabase: Client, logId: string, force: boolean) {
   const { data: log } = await supabase
     .from("workout_logs")
-    .select("id, user_id, date, workout_id, duree_min, ressenti, note_coach, set_logs(exercise_id, serie_num, charge_kg, reps, duree_sec, rir, exercise:exercises(nom))")
+    .select("id, user_id, date, workout_id, duree_min, ressenti, note, note_coach, set_logs(exercise_id, serie_num, charge_kg, reps, duree_sec, rir, exercise:exercises(nom))")
     .eq("id", logId)
     .maybeSingle()
   if (!log || log.set_logs.length === 0) return
@@ -148,7 +148,7 @@ async function recalculer(supabase: Client, logId: string, force: boolean) {
   const [{ data: precedentes }, { data: douleurs }, { data: profil }] = await Promise.all([
     supabase
       .from("workout_logs")
-      .select("date, ressenti, note_coach, set_logs(exercise_id, serie_num, charge_kg, reps, duree_sec, rir)")
+      .select("date, ressenti, note, note_coach, set_logs(exercise_id, serie_num, charge_kg, reps, duree_sec, rir)")
       .lt("date", log.date)
       .order("date", { ascending: false })
       .limit(SEANCES_D_HISTORIQUE),
@@ -166,12 +166,14 @@ async function recalculer(supabase: Client, logId: string, force: boolean) {
       date: log.date,
       duree_min: log.duree_min,
       ressenti_1_a_5: log.ressenti,
+      commentaire_de_l_utilisateur: log.note,
       notes_du_coach: log.note_coach,
       series: log.set_logs.map((s) => ({ exercice: s.exercise.nom, serie: s.serie_num, charge_kg: s.charge_kg, reps: s.reps, duree_sec: s.duree_sec, rir: s.rir })),
     },
     seances_precedentes: (precedentes ?? []).map((p) => ({
       date: p.date,
       ressenti_1_a_5: p.ressenti,
+      commentaire_de_l_utilisateur: p.note,
       notes_du_coach: p.note_coach,
       series: p.set_logs
         .filter((s) => exercices.includes(s.exercise_id))

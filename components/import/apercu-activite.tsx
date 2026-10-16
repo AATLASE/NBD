@@ -90,7 +90,7 @@ export function ApercuActivite({
             ? [
                 vers === "course"
                   ? "Une sortie est déjà enregistrée ce jour-là. Vérifie que ce n'est pas la même avant de l'ajouter."
-                  : "Cette séance est déjà dans ton journal ce jour-là. Vérifie que ce n'est pas la même avant de l'ajouter.",
+                  : "Cette séance est déjà dans ton journal ce jour-là : la montre la complétera (calories, durée) au lieu d'en créer une seconde.",
               ]
             : []),
         ]}
@@ -161,7 +161,7 @@ export function ApercuActivite({
                 disabled={enCours || workoutId === null}
                 onClick={() =>
                   workoutId &&
-                  onImporter({ vers: "seance", workoutId, date: activite.date, dureeMin: activite.dureeMin, note })
+                  onImporter({ vers: "seance", workoutId, date: activite.date, dureeMin: activite.dureeMin, note, kcal: activite.kcal })
                 }
               >
                 {workoutId === null ? "Choisis une séance" : "Ajouter au journal"}
