@@ -30,7 +30,9 @@ Quand il te décrit une séance entière, faite aujourd'hui ou un jour passé, e
 
 ## Planning, notes de séance et recalcul
 
-Ce qui est prévu chaque jour est dans l'état (prochains_jours) : c'est exactement ce que lui montre son onglet Sport. Pour dire quelle séance il fait un jour donné, lis prochains_jours, pas la semaine type. Dès que tu décides qu'il ne fait pas sa séance un jour, qu'il se repose, qu'il change de séance ou qu'il la décale, propose-le avec planifier_jours dans la même réponse : sinon l'onglet Sport continue d'afficher la séance et vous vous contredisez. Un conseil conditionnel (« si tu es fatigué, allège ») ne change pas le planning.
+Ce qui est prévu chaque jour est dans l'état (prochains_jours) : c'est exactement ce que lui montre son onglet Sport. Pour dire quelle séance il fait un jour donné, lis prochains_jours, pas la semaine type. Dès que tu décides qu'il ne fait pas sa séance un jour, qu'il se repose, qu'il change de séance, qu'il fait une autre activité (street workout, sport collectif, randonnée) ou qu'il la décale, propose-le avec planifier_jours dans la même réponse : sinon l'onglet Sport continue d'afficher la séance et vous vous contredisez.
+
+Un changement de jour ou de séance ne vaut que pour les dates dont il parle (« cette semaine », « demain », « jeudi »). Ne touche à sa semaine type (modifier_seance, remplacer_seance) que s'il dit clairement que c'est durable : « toutes les semaines », « désormais », « à partir de maintenant ». Dans le doute, fais le changement ponctuel et demande-lui s'il veut le garder pour les semaines suivantes. Un conseil conditionnel (« si tu es fatigué, allège ») ne change pas le planning.
 
 Quand il te parle d'une séance qu'il a faite (difficulté, fatigue, douleur ou gêne, technique, motivation), garde-le avec noter_seance sur cette séance. Cette note est invisible pour lui : n'en parle pas comme d'une modification.
 
@@ -54,6 +56,10 @@ N'utilise dans aucune recette un aliment qu'il a exclu : la liste est dans son p
 - Il ne peut pas aller en salle : s'il a une séance prévue pour la maison, propose de la faire à la place aujourd'hui avec planifier_jours.
 - Il est épuisé ou a mal : propose un jour de repos avec planifier_jours, et note ce qu'il dit sur sa dernière séance avec noter_seance.
 - Il demande ce qu'il mange ce soir : lis les menus du jour et réponds.
+- Il veut changer une séance : son contenu passe par les outils d'exercice (réglages, ajout, retrait, remplacement, ordre, charges) ; son nom, son lieu, sa durée, son jour ou sa note, par modifier_seance.
+- Une séance ne lui convient plus (trop longue, plus de salle, blessure) : propose de la remplacer durablement par une autre avec remplacer_seance, en créant la nouvelle d'abord si besoin. Pour un seul jour, c'est planifier_jours.
+- Il veut une nouvelle séance (pour la maison, un voyage, un nouveau focus) : crée-la avec creer_seance, avec des charges de départ tirées de son historique sur les mêmes exercices. Si elle doit prendre la place d'une séance un jour donné, propose ensuite le changement avec planifier_jours.
+- Il veut une nouvelle recette : crée-la avec creer_recette, puis propose de la placer dans ses menus avec remplacer_repas s'il le souhaite.
 - Il veut déplacer un repas : échange les deux cases, une par appel d'outil.`
 
 // Le personnage du coach choisi. Il ne change que la forme des réponses : il vient après la
@@ -92,7 +98,7 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
         supabase.from(table).select("date").order("date").limit(1)
       )
     ),
-    supabase.from("planning").select("id, date, workout_id, raison").gte("date", aujourdhui).lte("date", decalerJours(aujourdhui, 13)),
+    supabase.from("planning").select("id, date, workout_id, activite, raison").gte("date", aujourdhui).lte("date", decalerJours(aujourdhui, 13)),
     supabase.from("ajustements").select("resume, explication, created_at").eq("statut", "en_attente"),
   ])
 
@@ -103,7 +109,7 @@ export async function construireEtat(supabase: Client, aujourdhui: string) {
     return {
       date,
       jour: jourDe(date),
-      seance: seance ? `${seance.code} · ${seance.nom}` : "repos",
+      seance: seance ? `${seance.code} · ${seance.nom}` : exception?.activite ? `activité hors programme : ${exception.activite}` : "repos",
       ...(exception ? { change_par_rapport_a_la_semaine_type: exception.raison ?? true } : {}),
     }
   })

@@ -23,7 +23,14 @@ export function ExceptionPlanning({
       <CalendarClock className="mt-0.5 size-5 shrink-0 text-brand" aria-hidden="true" />
       <div className="min-w-0 flex-1 space-y-2">
         <p className="leading-snug">
-          <span className="font-semibold">{exception.workout_id ? "Séance changée ce jour-là" : "Repos prévu ce jour-là"}</span>
+          <span className="font-semibold">
+            {exception.workout_id
+              ? "Séance changée ce jour-là"
+              : exception.activite
+                ? `${exception.activite} prévu ce jour-là`
+                : "Repos prévu ce jour-là"}
+          </span>
+          <span className="block text-sm text-muted-foreground">Cette date seulement : les autres semaines ne changent pas.</span>
           {exception.raison && <span className="block text-muted-foreground">{exception.raison}</span>}
         </p>
         <Button

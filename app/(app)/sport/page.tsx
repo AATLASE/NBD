@@ -152,7 +152,11 @@ export default function SportAujourdhui() {
           <Carte className="space-y-4 p-4">
             <div>
               <p className="font-semibold">
-                {exception ? "Pas de séance aujourd'hui" : `Pas de séance prévue le ${jour}`}
+                {exception?.activite
+                  ? "Pas de séance du programme aujourd'hui"
+                  : exception
+                    ? "Pas de séance aujourd'hui"
+                    : `Pas de séance prévue le ${jour}`}
               </p>
               <p className="text-sm text-muted-foreground">
                 Jour de repos. Tu peux quand même en choisir une.

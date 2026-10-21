@@ -1708,6 +1708,8 @@ function noterReponse(supabase: Client, messageId: string, donnees: DonneesMessa
   return supabase.from("chat_messages").update({ tool_calls: donnees as unknown as Json }).eq("id", messageId)
 }
 
+const CHANGEMENTS_MAX_PAR_PROPOSITION = 250
+
 export async function appliquerProposition(messageId: string, effetId: string): Promise<ResultatEdition> {
   const supabase = await createClient()
   const proposition = await lireProposition(supabase, messageId, effetId)
@@ -1737,8 +1739,13 @@ export async function appliquerProposition(messageId: string, effetId: string): 
   if (effet.changements.some((c) => !TABLES_DU_CHAT.includes(c.table))) return INVALIDE
   // La liste de courses (document dérivé) et le planning (jusqu'à 7 jours) ne sont pas le programme :
   // ils peuvent dépasser la limite de lignes.
+  // Créer n'écrase rien (nouvelle séance, nouveau plat) : seules les modifications et suppressions
+  // de l'existant comptent dans la limite. Le plafond total reste une garde contre un message trafiqué.
   const horsLimite = ["grocery_list_items", "planning"]
-  if (effet.changements.filter((c) => !horsLimite.includes(c.table)).length > LIGNES_MAX_DU_CHAT) return INVALIDE
+  const surLExistant = effet.changements.filter((c) => !horsLimite.includes(c.table) && c.operation !== "insert")
+  if (surLExistant.length > LIGNES_MAX_DU_CHAT || effet.changements.length > CHANGEMENTS_MAX_PAR_PROPOSITION) {
+    return INVALIDE
+  }
 
   // Une modification du programme par l'assistant compte dans le quota du mois, une fois par message.
   let reservee: string | null = null

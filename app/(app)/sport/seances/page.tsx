@@ -66,6 +66,7 @@ export default function Seances() {
     const { seance } = seancePrevue(date, seances.data, planning.data)
     return seance ? [seance] : []
   }
+  const exceptionLe = (date: string) => seancePrevue(date, seances.data, planning.data).exception
   const faitesLe = (date: string) => journal.data.filter((log) => log.date === date)
 
   const date = dateChoisie ?? aujourdhui
@@ -80,7 +81,7 @@ export default function Seances() {
       cle: ["planning"],
       maj: (liste: Exception[]) => [
         ...liste.filter((p) => p.date !== date),
-        { id: "provisoire", date, workout_id: null, raison: "Repos choisi dans l'application" },
+        { id: "provisoire", date, workout_id: null, activite: null, raison: "Repos choisi dans l'application" },
       ],
     })
   }
@@ -96,7 +97,14 @@ export default function Seances() {
       }
     }
     const prevue = prevuesLe(jour)[0]
-    if (!prevue) return null
+    if (!prevue) {
+      // Une activité hors programme posée sur cette date : un point, sans lettre de séance.
+      const activite = exceptionLe(jour)?.activite
+      if (!activite) return null
+      return jour < aujourdhui!
+        ? { etat: "passe", description: `${activite} prévu, rien d'enregistré` }
+        : { etat: "prevu", description: `${activite} prévu` }
+    }
     return jour < aujourdhui!
       ? { etat: "passe", libelle: codeCourt(prevue.code), description: `séance ${prevue.code} prévue, pas enregistrée` }
       : { etat: "prevu", libelle: codeCourt(prevue.code), description: `séance ${prevue.code} prévue` }

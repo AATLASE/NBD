@@ -4,7 +4,8 @@
 
 import { jourDe } from "@/lib/format"
 
-export type Exception = { id: string; date: string; workout_id: string | null; raison: string | null }
+// workout_id et activite vides : repos. Une activité est hors programme (street workout, rando…).
+export type Exception = { id: string; date: string; workout_id: string | null; activite: string | null; raison: string | null }
 
 type SeanceTypee = { id: string; jour_suggere: string | null }
 

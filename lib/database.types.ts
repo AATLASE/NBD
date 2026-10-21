@@ -79,14 +79,14 @@ isOneToOne: false
                   ]
                 },"planning": {
                   Row: {
-                    "date": string,"id": string,"raison": string | null,"user_id": string,"workout_id": string | null
+                    "activite": string | null,"date": string,"id": string,"raison": string | null,"user_id": string,"workout_id": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "date": string,"id"?: string,"raison"?: string | null,"user_id": string,"workout_id"?: string | null
+                    "activite"?: string | null,"date": string,"id"?: string,"raison"?: string | null,"user_id": string,"workout_id"?: string | null
                   }
                   Update: {
-                    "date"?: string,"id"?: string,"raison"?: string | null,"user_id"?: string,"workout_id"?: string | null
+                    "activite"?: string | null,"date"?: string,"id"?: string,"raison"?: string | null,"user_id"?: string,"workout_id"?: string | null
                   }
                   Relationships: [
                     {

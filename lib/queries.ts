@@ -54,7 +54,7 @@ function lireHistoriqueSeries() {
 
 // Les exceptions à la semaine type, date par date (repos, séance changée).
 function lirePlanning() {
-  return liste(db().from("planning").select("id, date, workout_id, raison").order("date"))
+  return liste(db().from("planning").select("id, date, workout_id, activite, raison").order("date"))
 }
 
 // Ajustements proposés après une séance, en attente d'une réponse.

@@ -15,7 +15,7 @@ import {
 import { cleDe, composerListe, type IngredientDePlat } from "@/lib/courses"
 import type { Json } from "@/lib/database.types"
 import { dateCourte, nombre, prescription } from "@/lib/format"
-import { EQUIPEMENTS, GROUPES, JOURS, LIBELLE_SLOT, SLOTS } from "@/lib/libelles"
+import { EQUIPEMENTS, GROUPES, JOURS, LIBELLE_LIEU, LIBELLE_SLOT, LIEUX, SLOTS } from "@/lib/libelles"
 import { seanceDeLaSemaineType } from "@/lib/planning"
 import { recalculerApresSeance } from "@/lib/recalcul"
 import type { createClient } from "@/lib/supabase/server"
@@ -460,6 +460,257 @@ export function creerOutils(c: Contexte) {
       },
     }),
 
+    betaZodTool({
+      name: "creer_seance",
+      description:
+        "Crée une nouvelle séance dans son programme, avec ses exercices dans l'ordre. " +
+        "Reprends le nom exact d'un exercice qu'il a déjà quand c'est le même mouvement ; sinon il est créé, et donne alors son groupe et son équipement. " +
+        "Pour chaque exercice : séries, répétitions (reps_min et reps_max) ou durée (duree_sec), repos, et une charge de départ cohérente avec son historique et son niveau (null au poids du corps). " +
+        "jour_suggere rattache la séance à un jour de sa semaine type ; laisse-le vide pour une séance de repli (maison, voyage), ou si le jour est déjà pris.",
+      inputSchema: z.object({
+        code: z.string().min(1).max(8),
+        nom: z.string().min(2).max(60),
+        lieu: z.enum(LIEUX),
+        duree_min: z.number().int().min(10).max(240),
+        jour_suggere: z.enum(JOURS).nullable(),
+        note: z.string().max(300).nullable().optional(),
+        exercices: z
+          .array(
+            z.object({
+              nom: z.string().min(2).max(60),
+              groupe: z.enum(GROUPES).optional(),
+              equipement: z.enum(EQUIPEMENTS).optional(),
+              series: z.number().int().min(1).max(10),
+              reps_min: z.number().int().min(1).max(100).nullable(),
+              reps_max: z.number().int().min(1).max(100).nullable(),
+              duree_sec: z.number().int().min(5).max(3600).nullable(),
+              repos_sec: z.number().int().min(0).max(600),
+              charge_depart_kg: z.number().min(0).max(1000).nullable(),
+              increment_kg: z.number().min(0.25).max(20).nullable().optional(),
+            })
+          )
+          .min(1)
+          .max(12),
+      }),
+      run: async ({ code, nom, lieu, duree_min, jour_suggere, note, exercices }) => {
+        const codePropre = code.trim().toUpperCase()
+        const [{ data: seances }, { data: connus }] = await Promise.all([
+          db.from("workouts").select("id, code, nom, jour_suggere, ordre").not("archived", "is", true),
+          db.from("exercises").select("id, nom").not("archived", "is", true),
+        ])
+        const existantes = seances ?? []
+        if (existantes.some((s) => s.code.toUpperCase() === codePropre)) {
+          return `Le code ${codePropre} est déjà pris par une séance. Choisis-en un autre.`
+        }
+        const occupe = jour_suggere ? existantes.find((s) => s.jour_suggere === jour_suggere) : undefined
+        if (occupe) {
+          return `Le ${jour_suggere} est déjà pris par la séance ${occupe.code}. Choisis un autre jour, ou laisse jour_suggere vide.`
+        }
+        const incoherent = exercices.find(
+          (e) =>
+            (e.duree_sec === null && e.reps_min === null && e.reps_max === null) ||
+            (e.reps_min !== null && e.reps_max !== null && e.reps_min > e.reps_max)
+        )
+        if (incoherent) return `« ${incoherent.nom} » : donne des répétitions (mini au plus égal au maxi) ou une durée.`
+
+        // Un mouvement cité deux fois n'est créé qu'une fois.
+        const parCle = new Map((connus ?? []).map((e) => [cleDe(e.nom), e]))
+        const changements: ChangementChat[] = []
+        const sansGroupe: string[] = []
+        const workoutId = crypto.randomUUID()
+        changements.push({
+          table: "workouts",
+          operation: "insert",
+          id: workoutId,
+          data: {
+            code: codePropre,
+            nom: nom.trim(),
+            lieu,
+            duree_min,
+            jour_suggere,
+            note: note?.trim() || null,
+            ordre: Math.max(0, ...existantes.map((s) => s.ordre)) + 1,
+          },
+        })
+        const lignes: { nom: string; reglages: Parameters<typeof resumeLigne>[0] }[] = []
+        exercices.forEach((exercice, index) => {
+          const cle = cleDe(exercice.nom)
+          if (!parCle.has(cle)) {
+            if (!exercice.groupe || !exercice.equipement) {
+              sansGroupe.push(exercice.nom)
+              return
+            }
+            const nouveau = { id: crypto.randomUUID(), nom: exercice.nom.trim().slice(0, 60) }
+            changements.push({
+              table: "exercises",
+              operation: "insert",
+              id: nouveau.id,
+              data: { nom: nouveau.nom, groupe: exercice.groupe, equipement: exercice.equipement },
+            })
+            parCle.set(cle, nouveau)
+          }
+          const cible = parCle.get(cle)!
+          const reglages = {
+            series: exercice.series,
+            reps_min: exercice.reps_min,
+            reps_max: exercice.reps_max,
+            duree_sec: exercice.duree_sec,
+            repos_sec: exercice.repos_sec,
+            charge_depart_kg: exercice.charge_depart_kg,
+            increment_kg: exercice.increment_kg ?? null,
+          }
+          changements.push({
+            table: "workout_exercises",
+            operation: "insert",
+            id: crypto.randomUUID(),
+            data: { workout_id: workoutId, exercise_id: cible.id, ordre: index + 1, ...reglages },
+          })
+          lignes.push({ nom: cible.nom, reglages })
+        })
+        if (sansGroupe.length > 0) {
+          return `Rien n'est créé. Exercices nouveaux pour l'utilisateur : ${sansGroupe.join(", ")}. Rappelle l'outil en donnant groupe et equipement pour chacun.`
+        }
+
+        return soumettre(c, {
+          changements,
+          resume: `Nouvelle séance ${codePropre} : ${nom.trim()}, ${lignes.length} exercice${lignes.length > 1 ? "s" : ""}`,
+          diff: [
+            {
+              titre: `Séance ${codePropre}`,
+              avant: null,
+              apres: [nom.trim(), LIBELLE_LIEU[lieu] ?? lieu, `${duree_min} min`, jour_suggere ?? "sans jour fixe"].join(" · "),
+            },
+            ...lignes.map((l, i) => ({ titre: `${i + 1}. ${l.nom}`, avant: null, apres: resumeLigne(l.reglages) })),
+          ],
+          // Créer n'écrase rien : une séance entière compte comme une seule modification du programme.
+          lignes: 1,
+          quota: true,
+        })
+      },
+    }),
+
+    betaZodTool({
+      name: "modifier_seance",
+      description:
+        "Change ce qui décrit une séance, sans toucher à ses exercices : nom, code, lieu, durée, jour de la semaine type ou note. " +
+        "Ne donne que les champs qui changent. jour_suggere à null la retire de la semaine type (séance de repli). " +
+        "Si le jour voulu est déjà pris par une autre séance, utilise remplacer_seance. Pour les exercices, utilise les outils d'exercice.",
+      inputSchema: z.object({
+        code: z.string().min(1).max(8),
+        champs: z.object({
+          nom: z.string().min(2).max(60).optional(),
+          nouveau_code: z.string().min(1).max(8).optional(),
+          lieu: z.enum(LIEUX).optional(),
+          duree_min: z.number().int().min(10).max(240).optional(),
+          jour_suggere: z.enum(JOURS).nullable().optional(),
+          note: z.string().max(300).nullable().optional(),
+        }),
+      }),
+      run: async ({ code, champs }) => {
+        const { data: seances } = await db
+          .from("workouts")
+          .select("id, code, nom, lieu, duree_min, jour_suggere, note")
+          .not("archived", "is", true)
+        const liste = seances ?? []
+        const seance = liste.find((s) => s.code.toUpperCase() === code.trim().toUpperCase())
+        if (!seance) return `Aucune séance avec le code ${code}.`
+        const nouveauCode = champs.nouveau_code?.trim().toUpperCase()
+        if (nouveauCode && nouveauCode !== seance.code.toUpperCase() && liste.some((s) => s.code.toUpperCase() === nouveauCode)) {
+          return `Le code ${nouveauCode} est déjà pris par une autre séance.`
+        }
+        if (champs.jour_suggere) {
+          const occupe = liste.find((s) => s.id !== seance.id && s.jour_suggere === champs.jour_suggere)
+          if (occupe) {
+            return `Le ${champs.jour_suggere} est déjà pris par la séance ${occupe.code}. Pour mettre cette séance à sa place, utilise remplacer_seance.`
+          }
+        }
+
+        const voulu: Record<string, unknown> = {
+          nom: champs.nom?.trim(),
+          code: nouveauCode,
+          lieu: champs.lieu,
+          duree_min: champs.duree_min,
+          jour_suggere: champs.jour_suggere,
+          note: champs.note === undefined ? undefined : champs.note?.trim() || null,
+        }
+        const actuel = seance as unknown as Record<string, unknown>
+        const modifies = Object.entries(voulu).filter(([cle, valeur]) => valeur !== undefined && actuel[cle] !== valeur)
+        const libelles: Record<string, string> = { nom: "Nom", code: "Code", lieu: "Lieu", duree_min: "Durée (min)", jour_suggere: "Jour", note: "Note" }
+        const lisibleChamp = (cle: string, valeur: unknown) =>
+          valeur === null || valeur === undefined
+            ? cle === "jour_suggere" ? "sans jour fixe" : "aucun"
+            : cle === "lieu" ? (LIBELLE_LIEU[String(valeur)] ?? String(valeur)) : String(valeur)
+        return soumettre(c, {
+          changements: modifies.length
+            ? [{ table: "workouts", operation: "update", id: seance.id, data: Object.fromEntries(modifies) }]
+            : [],
+          resume: `Séance ${seance.code} modifiée : ${modifies.map(([cle]) => libelles[cle]!.toLowerCase()).join(", ")}`,
+          diff: modifies.map(([cle, valeur]) => ({
+            titre: `Séance ${seance.code}, ${libelles[cle]!.toLowerCase()}`,
+            avant: lisibleChamp(cle, actuel[cle]),
+            apres: lisibleChamp(cle, valeur),
+          })),
+          lignes: 1,
+          quota: true,
+        })
+      },
+    }),
+
+    betaZodTool({
+      name: "remplacer_seance",
+      description:
+        "Remplace durablement une séance par une autre dans sa semaine type : la nouvelle prend le jour de l'ancienne. " +
+        "L'ancienne devient une séance sans jour fixe, ou est retirée du programme si retirer_ancienne est vrai (ses séances faites restent dans l'historique). " +
+        "Pour un seul jour précis, utilise plutôt planifier_jours. Pour une séance qui n'existe pas encore, crée-la d'abord avec creer_seance.",
+      inputSchema: z.object({
+        ancienne_code: z.string().min(1).max(8),
+        nouvelle_code: z.string().min(1).max(8),
+        retirer_ancienne: z.boolean(),
+      }),
+      run: async ({ ancienne_code, nouvelle_code, retirer_ancienne }) => {
+        const { data: seances } = await db.from("workouts").select("id, code, nom, jour_suggere").not("archived", "is", true)
+        const liste = seances ?? []
+        const trouver = (code: string) => liste.find((s) => s.code.toUpperCase() === code.trim().toUpperCase())
+        const ancienne = trouver(ancienne_code)
+        const nouvelle = trouver(nouvelle_code)
+        if (!ancienne) return `Aucune séance avec le code ${ancienne_code}.`
+        if (!nouvelle) return `Aucune séance avec le code ${nouvelle_code}. Crée-la d'abord avec creer_seance.`
+        if (ancienne.id === nouvelle.id) return "C'est la même séance."
+        if (!ancienne.jour_suggere && !retirer_ancienne) {
+          return `La séance ${ancienne.code} n'a pas de jour fixe : il n'y a rien à remplacer dans la semaine type. Pour un jour précis, utilise planifier_jours.`
+        }
+
+        const jour = ancienne.jour_suggere
+        const changements: ChangementChat[] = [
+          { table: "workouts", operation: "update", id: ancienne.id, data: retirer_ancienne ? { archived: true, jour_suggere: null } : { jour_suggere: null } },
+        ]
+        if (jour && nouvelle.jour_suggere !== jour) {
+          changements.push({ table: "workouts", operation: "update", id: nouvelle.id, data: { jour_suggere: jour } })
+        }
+        const libelle = (s: { code: string; nom: string }) => `Séance ${s.code} · ${s.nom}`
+        return soumettre(c, {
+          changements,
+          resume: jour
+            ? `Le ${jour}, la séance ${nouvelle.code} remplace la séance ${ancienne.code}${retirer_ancienne ? `, retirée du programme` : ""}`
+            : `Séance ${ancienne.code} retirée du programme`,
+          diff: [
+            ...(jour ? [{ titre: `Le ${jour}`, avant: libelle(ancienne), apres: libelle(nouvelle) }] : []),
+            ...(nouvelle.jour_suggere && jour && nouvelle.jour_suggere !== jour
+              ? [{ titre: `Le ${nouvelle.jour_suggere}`, avant: libelle(nouvelle), apres: "Repos" }]
+              : []),
+            {
+              titre: libelle(ancienne),
+              avant: ancienne.jour_suggere ? `Le ${ancienne.jour_suggere}` : "Sans jour fixe",
+              apres: retirer_ancienne ? null : "Sans jour fixe",
+            },
+          ],
+          lignes: changements.length,
+          // Retirer une séance du programme est une suppression : la carte le montre, rien n'est fait sans accord.
+          quota: true,
+        })
+      },
+    }),
+
     // ----- Nutrition -----
     betaZodTool({
       name: "remplacer_repas",
@@ -804,7 +1055,8 @@ export function creerOutils(c: Contexte) {
     betaZodTool({
       name: "planifier_jours",
       description:
-        "Change ce qui est prévu à des dates précises, sans toucher à la semaine type : un jour de repos (seance_code à null) ou une autre séance du programme (seance_code). " +
+        "Change ce qui est prévu à des dates précises, pour ces dates seulement : les autres semaines ne bougent pas. " +
+        "Pour chaque date : une séance du programme (seance_code), une activité hors programme (activite, par exemple « Street workout », seance_code à null), ou un repos (les deux à null). " +
         "Pour décaler une séance, mets le jour d'origine en repos et la séance au nouveau jour, dans le même appel. Donne toujours la raison, en quelques mots. " +
         "Remettre à une date la séance de sa semaine type retire l'exception. Aujourd'hui ou plus tard seulement.",
       inputSchema: z.object({
@@ -813,6 +1065,7 @@ export function creerOutils(c: Contexte) {
             z.object({
               date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
               seance_code: z.string().min(1).max(8).nullable(),
+              activite: z.string().min(2).max(60).nullable().optional(),
               raison: z.string().min(2).max(300),
             })
           )
@@ -822,43 +1075,47 @@ export function creerOutils(c: Contexte) {
       run: async ({ jours }) => {
         if (jours.some((j) => j.date < c.aujourdhui)) return "REFUS : le planning ne se change pas pour un jour passé."
         if (new Set(jours.map((j) => j.date)).size !== jours.length) return "Une même date apparaît deux fois : regroupe-les."
+        if (jours.some((j) => j.seance_code && j.activite)) return "Pour une même date, donne soit une séance du programme, soit une activité, pas les deux."
         const [{ data: seances }, { data: exceptions }] = await Promise.all([
           db.from("workouts").select("id, code, nom, jour_suggere").not("archived", "is", true),
-          db.from("planning").select("id, date, workout_id").in("date", jours.map((j) => j.date)),
+          db.from("planning").select("id, date, workout_id, activite").in("date", jours.map((j) => j.date)),
         ])
         const liste = seances ?? []
-        const libelle = (id: string | null | undefined) => {
+        const libelle = (id: string | null | undefined, activite?: string | null) => {
           const seance = id ? liste.find((s) => s.id === id) : undefined
-          return seance ? `Séance ${seance.code} · ${seance.nom}` : "Repos"
+          return seance ? `Séance ${seance.code} · ${seance.nom}` : activite ? activite : "Repos"
         }
         const changements: ChangementChat[] = []
         const diff: LigneDiff[] = []
+        const resumes: string[] = []
         for (const jour of jours) {
           const cible = jour.seance_code ? liste.find((s) => s.code.toLowerCase() === jour.seance_code!.toLowerCase()) : null
           if (jour.seance_code && !cible) return `Aucune séance avec le code ${jour.seance_code}.`
+          const activite = cible ? null : jour.activite?.trim() || null
           const type = seanceDeLaSemaineType(jour.date, liste)
           const existante = (exceptions ?? []).find((e) => e.date === jour.date)
-          const avant = libelle(existante ? existante.workout_id : type?.id)
+          const avant = existante ? libelle(existante.workout_id, existante.activite) : libelle(type?.id)
           const voulue = cible?.id ?? null
-          if (voulue === (type?.id ?? null)) {
+          if (voulue === (type?.id ?? null) && !activite) {
             // Revenir à la semaine type, c'est retirer l'exception.
             if (existante) changements.push({ table: "planning", operation: "delete", id: existante.id })
           } else {
-            const data = { date: jour.date, workout_id: voulue, raison: jour.raison }
+            const data = { date: jour.date, workout_id: voulue, activite, raison: jour.raison }
             changements.push(
               existante
                 ? { table: "planning", operation: "update", id: existante.id, data }
                 : { table: "planning", operation: "insert", id: crypto.randomUUID(), data }
             )
           }
-          const apres = libelle(voulue)
+          const apres = libelle(voulue, activite)
           if (avant !== apres) diff.push({ titre: majusculeInitiale(dateCourte(jour.date)), avant, apres })
+          resumes.push(`${dateCourte(jour.date)} : ${apres.toLowerCase()}`)
         }
         return soumettre(c, {
           changements,
-          resume: jours.length === 1 ? `${majusculeInitiale(dateCourte(jours[0]!.date))} : ${libelle(changements[0]?.data?.workout_id as string | null)}. ${jours[0]!.raison}` : `Planning ajusté sur ${jours.length} jours : ${jours[0]!.raison}`,
+          resume: `Cette fois seulement, ${resumes.join(", ")}. ${jours[0]!.raison}`,
           diff,
-          // Décider d'un repos ou d'un décalage n'est pas modifier le programme : pas de quota.
+          // Décider d'un repos, d'une activité ou d'un décalage n'est pas modifier le programme : pas de quota.
           quota: false,
           sansLimite: true,
         })
