@@ -11,7 +11,7 @@ export const estUnCoach = (valeur: unknown): valeur is IdCoach =>
   typeof valeur === "string" && (COACHS as readonly string[]).includes(valeur)
 
 // Moments où le coach dit un mot sans passer par l'assistant.
-export type Moment = "seance" | "repos" | "faite" | "fin"
+export type Moment = "seance" | "repos" | "faite" | "fin" | "essai"
 
 export type Coach = {
   id: IdCoach
@@ -24,7 +24,7 @@ export type Coach = {
   // Sa façon de parler, donnée à l'assistant.
   style: string
   // Phrases écrites à l'avance : séance prévue aujourd'hui, jour de repos, séance du jour faite,
-  // résumé de fin de séance.
+  // résumé de fin de séance, première notification reçue sur un appareil.
   phrases: Record<Moment, string[]>
   portrait: { fond: string; couleurs: Record<string, string>; pixels: string[] }
 }
@@ -66,6 +66,7 @@ export const COACH: Record<IdCoach, Coach> = {
         "Bien. Tu n'as pas triché, ça se verra.",
         "Séance bouclée. On garde ce niveau la prochaine fois.",
       ],
+      essai: ["C'est moi qui t'écrirai ici. Jours de séance, comptes rendus, ajustements : tu seras prévenu."],
     },
     portrait: {
       fond: "#fee2e2",
@@ -127,6 +128,7 @@ export const COACH: Record<IdCoach, Coach> = {
         "Tu as fait de ton mieux, et c'est tout ce qui compte.",
         "Je suis fière de toi. Prends le temps de souffler.",
       ],
+      essai: ["Coucou, c'est Lina. Je t'écrirai ici les jours de séance et après chacune d'elles."],
     },
     portrait: {
       fond: "#dcfce7",
@@ -188,6 +190,7 @@ export const COACH: Record<IdCoach, Coach> = {
         "C'est enregistré : on pourra comparer à la séance suivante.",
         "Travail propre. Regarde ta progression dans l'onglet dédié.",
       ],
+      essai: ["Test réussi. Tes rappels, tes comptes rendus et mes ajustements arriveront ici."],
     },
     portrait: {
       fond: "#dbeafe",
@@ -249,6 +252,7 @@ export const COACH: Record<IdCoach, Coach> = {
         "Séance terminée, mission accomplie. Va manger un truc correct.",
         "Ça, c'est fait. On remet ça bientôt ?",
       ],
+      essai: ["Ça marche ! Je viendrai te chercher ici les jours de séance, promis."],
     },
     portrait: {
       fond: "#fef3c7",

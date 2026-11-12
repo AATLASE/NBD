@@ -2,8 +2,8 @@
 
 import { BedDouble, Check, ClipboardCheck, Dumbbell, FileBarChart, Moon, Pencil, Plus } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Suspense, useState } from "react"
 
 import { Carte, EnTete, Section, Vide } from "@/components/blocs"
 import { Calendrier, premierDuMois, type Marque } from "@/components/calendrier"
@@ -37,14 +37,28 @@ import {
 // Code court d'une séance pour la marque du calendrier, comme sa pastille.
 const codeCourt = (code: string) => (code.length <= 2 ? code : code.charAt(0))
 
-export default function Seances() {
+// Ouverte depuis une notification de compte rendu : ?date=2026-10-29&rapport=<séance enregistrée>.
+export default function Page() {
+  return (
+    <Suspense>
+      <Seances />
+    </Suspense>
+  )
+}
+
+function Seances() {
+  const parametres = useSearchParams()
+  const dateDemandee = parametres.get("date")
+  const rapportDemande = parametres.get("rapport")
   const aujourdhui = useAujourdhui()
   const seances = useSeances()
   const journal = useJournalSeances()
   const planning = usePlanning()
   const router = useRouter()
   const { executer, enCours } = useEdition()
-  const [dateChoisie, setDateChoisie] = useState<string | null>(null)
+  const [dateChoisie, setDateChoisie] = useState<string | null>(
+    dateDemandee && /^\d{4}-\d{2}-\d{2}$/.test(dateDemandee) ? dateDemandee : null
+  )
   const [mois, setMois] = useState<string | null>(null)
   const [saisie, setSaisie] = useState(false)
 
@@ -135,7 +149,12 @@ export default function Seances() {
           )}
 
           {faites.map((log) => (
-            <SeanceFaite key={log.id} log={log} seance={log.workout_id ? parId.get(log.workout_id) : undefined} />
+            <SeanceFaite
+              key={log.id}
+              log={log}
+              seance={log.workout_id ? parId.get(log.workout_id) : undefined}
+              rapportOuvert={log.id === rapportDemande}
+            />
           ))}
 
           {prevues.map((seance) => (
@@ -230,9 +249,17 @@ function SeancePrevue({ seance, jour, demarrable }: { seance: Seance; jour: stri
 }
 
 // Une séance enregistrée ce jour-là, avec ses séries exercice par exercice.
-function SeanceFaite({ log, seance }: { log: Tables<"workout_logs">; seance: Seance | undefined }) {
+function SeanceFaite({
+  log,
+  seance,
+  rapportOuvert = false,
+}: {
+  log: Tables<"workout_logs">
+  seance: Seance | undefined
+  rapportOuvert?: boolean
+}) {
   const series = useSeriesSeance(log.id)
-  const [rapport, setRapport] = useState(false)
+  const [rapport, setRapport] = useState(rapportOuvert)
   const titre = !log.workout_id
     ? "Séance hors programme"
     : seance

@@ -23,6 +23,7 @@ import { Carte, EnTete, Section } from "@/components/blocs"
 import { AvatarCoach } from "@/components/coach/avatar"
 import { Attente } from "@/components/etats"
 import { EditeurProfil, type Profil, type Sujet } from "@/components/parametres/editeurs"
+import { ReglagesNotifications } from "@/components/parametres/notifications"
 import { Button } from "@/components/ui/button"
 import { COACH, estUnCoach } from "@/lib/coachs"
 import { nombre } from "@/lib/format"
@@ -81,6 +82,10 @@ export default function Parametres() {
           )}
           <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />
         </button>
+      </Section>
+
+      <Section titre="Notifications">
+        <ReglagesNotifications profil={p} onChoisirCoach={() => setSujet("coach")} />
       </Section>
 
       <Section titre="Objectifs du jour">

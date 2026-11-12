@@ -626,6 +626,6 @@ L'application est terminée quand ces 10 scénarios passent sur un téléphone :
 
 - Pas de dépendance à une bibliothèque de graphiques lourde : Recharts suffit
 - Pas d'animations décoratives, pas de dégradés, pas d'emoji dans l'interface
-- Pas de notification push dans la version 1
+- ~~Pas de notification push dans la version 1~~ : levé le 2026-10-29. Le coach choisi écrit les jours de séance, après chaque séance (compte rendu) et quand il propose un ajustement ; réglages dans l'onglet Paramètres
 - Pas de partage, pas de social, pas de multi-utilisateur
 - Pas de page de réglages fourre-tout : chaque réglage vit dans l'écran qu'il concerne

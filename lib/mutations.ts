@@ -37,7 +37,8 @@ import {
 } from "@/lib/proposition/schemas"
 import { after } from "next/server"
 
-import { CHAMPS_AJUSTABLES, recalculerApresSeance } from "@/lib/recalcul"
+import { apresSeance } from "@/lib/notifications/apres-seance"
+import { CHAMPS_AJUSTABLES } from "@/lib/recalcul"
 import { createClient } from "@/lib/supabase/server"
 
 // Couche d'écriture unique (SPEC section 4). Aucun composant n'écrit en base directement :
@@ -1461,8 +1462,9 @@ export async function enregistrerSeance(seance: SeanceAEnregistrer): Promise<Res
           : "Enregistrement impossible. Ta séance est gardée sur ce téléphone, réessaie.",
     }
   }
-  // La séance est enregistrée : le recalcul des suivantes part en tâche de fond, après la réponse.
-  after(() => recalculerApresSeance(supabase, seance.id))
+  // La séance est enregistrée : le compte rendu du coach et le recalcul des suivantes partent en
+  // tâche de fond, après la réponse.
+  after(() => apresSeance(supabase, seance.id))
   return { ok: true, changeLogId: data }
 }
 
@@ -1513,6 +1515,10 @@ const REGLES_PROFIL: Record<string, Regle> = {
   objectif_lipides_g: entier(10, 300),
   objectif_glucides_g: entier(0, 900),
   coach: parmi(COACHS),
+  notif_seance: (v) => typeof v === "boolean",
+  notif_rapport: (v) => typeof v === "boolean",
+  notif_ajustement: (v) => typeof v === "boolean",
+  notif_heure: entier(5, 22),
 }
 
 export type ChampsProfil = Partial<{
@@ -1533,6 +1539,10 @@ export type ChampsProfil = Partial<{
   objectif_lipides_g: number
   objectif_glucides_g: number
   coach: string
+  notif_seance: boolean
+  notif_rapport: boolean
+  notif_ajustement: boolean
+  notif_heure: number
 }>
 
 // Ce que l'historique dit d'un changement de profil, par groupe de champs.
@@ -1543,6 +1553,7 @@ const SUJETS_PROFIL: [string, string[]][] = [
   ["entraînement", ["lieux_entrainement", "seances_par_semaine", "niveau"]],
   ["alimentation", ["regime", "aliments_exclus"]],
   ["coach", ["coach"]],
+  ["notifications", ["notif_seance", "notif_rapport", "notif_ajustement", "notif_heure"]],
 ]
 
 const identiques = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
@@ -1730,7 +1741,7 @@ export async function appliquerProposition(messageId: string, effetId: string): 
     effet.groupeId = groupeId
     await noterReponse(supabase, messageId, donnees)
     const seanceId = effet.seance.p_id
-    after(() => recalculerApresSeance(supabase, seanceId))
+    after(() => apresSeance(supabase, seanceId))
     return { ok: true, groupeId, resume: effet.resume }
   }
 

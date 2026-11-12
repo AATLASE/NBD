@@ -17,7 +17,7 @@ import type { Json } from "@/lib/database.types"
 import { dateCourte, nombre, prescription } from "@/lib/format"
 import { EQUIPEMENTS, GROUPES, JOURS, LIBELLE_LIEU, LIBELLE_SLOT, LIEUX, SLOTS } from "@/lib/libelles"
 import { seanceDeLaSemaineType } from "@/lib/planning"
-import { recalculerApresSeance } from "@/lib/recalcul"
+import { apresSeance } from "@/lib/notifications/apres-seance"
 import type { createClient } from "@/lib/supabase/server"
 
 // Outils du chatbot (SPEC 7.2) et règles appliquées en code (SPEC 7.3 et 7.4).
@@ -1136,7 +1136,7 @@ export function creerOutils(c: Contexte) {
         const texte = [log.note_coach, note.trim()].filter(Boolean).join("\n").slice(-2000)
         const { error } = await db.from("workout_logs").update({ note_coach: texte }).eq("id", log.id)
         if (error) return "ÉCHEC : la note n'a pas pu être enregistrée."
-        after(() => recalculerApresSeance(c.supabase, log.id, { force: true }))
+        after(() => apresSeance(c.supabase, log.id, { force: true }))
         return "NOTÉ, de façon invisible pour l'utilisateur : n'en parle pas comme d'une modification. Le recalcul de ses prochaines séances est relancé ; s'il y a quelque chose à ajuster, une proposition apparaîtra dans son onglet Sport."
       },
     }),

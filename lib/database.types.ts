@@ -271,14 +271,42 @@ isOneToOne: false
                   ]
                 },"profiles": {
                   Row: {
-                    "accueil_fait_le": string | null,"age": number | null,"aliments_exclus": (string)[],"budget_courses_eur": number | null,"coach": string | null,"contrainte_medicale": string | null,"created_at": string | null,"id": string,"lieux_entrainement": (string)[],"niveau": string | null,"objectif_glucides_g": number | null,"objectif_kcal": number | null,"objectif_lipides_g": number | null,"objectif_proteines_g": number | null,"objectifs": (string)[],"poids_initial_kg": number | null,"regime": string | null,"seances_par_semaine": number | null,"sexe": string | null,"taille_cm": number | null,"zone_blessure": string | null
+                    "accueil_fait_le": string | null,"age": number | null,"aliments_exclus": (string)[],"budget_courses_eur": number | null,"coach": string | null,"contrainte_medicale": string | null,"created_at": string | null,"id": string,"lieux_entrainement": (string)[],"niveau": string | null,"notif_ajustement": boolean,"notif_heure": number,"notif_rapport": boolean,"notif_seance": boolean,"objectif_glucides_g": number | null,"objectif_kcal": number | null,"objectif_lipides_g": number | null,"objectif_proteines_g": number | null,"objectifs": (string)[],"poids_initial_kg": number | null,"regime": string | null,"seances_par_semaine": number | null,"sexe": string | null,"taille_cm": number | null,"zone_blessure": string | null
                   }
                   ComputedFields: never
                   Insert: {
-                    "accueil_fait_le"?: string | null,"age"?: number | null,"aliments_exclus"?: (string)[],"budget_courses_eur"?: number | null,"coach"?: string | null,"contrainte_medicale"?: string | null,"created_at"?: string | null,"id": string,"lieux_entrainement"?: (string)[],"niveau"?: string | null,"objectif_glucides_g"?: number | null,"objectif_kcal"?: number | null,"objectif_lipides_g"?: number | null,"objectif_proteines_g"?: number | null,"objectifs"?: (string)[],"poids_initial_kg"?: number | null,"regime"?: string | null,"seances_par_semaine"?: number | null,"sexe"?: string | null,"taille_cm"?: number | null,"zone_blessure"?: string | null
+                    "accueil_fait_le"?: string | null,"age"?: number | null,"aliments_exclus"?: (string)[],"budget_courses_eur"?: number | null,"coach"?: string | null,"contrainte_medicale"?: string | null,"created_at"?: string | null,"id": string,"lieux_entrainement"?: (string)[],"niveau"?: string | null,"notif_ajustement"?: boolean,"notif_heure"?: number,"notif_rapport"?: boolean,"notif_seance"?: boolean,"objectif_glucides_g"?: number | null,"objectif_kcal"?: number | null,"objectif_lipides_g"?: number | null,"objectif_proteines_g"?: number | null,"objectifs"?: (string)[],"poids_initial_kg"?: number | null,"regime"?: string | null,"seances_par_semaine"?: number | null,"sexe"?: string | null,"taille_cm"?: number | null,"zone_blessure"?: string | null
                   }
                   Update: {
-                    "accueil_fait_le"?: string | null,"age"?: number | null,"aliments_exclus"?: (string)[],"budget_courses_eur"?: number | null,"coach"?: string | null,"contrainte_medicale"?: string | null,"created_at"?: string | null,"id"?: string,"lieux_entrainement"?: (string)[],"niveau"?: string | null,"objectif_glucides_g"?: number | null,"objectif_kcal"?: number | null,"objectif_lipides_g"?: number | null,"objectif_proteines_g"?: number | null,"objectifs"?: (string)[],"poids_initial_kg"?: number | null,"regime"?: string | null,"seances_par_semaine"?: number | null,"sexe"?: string | null,"taille_cm"?: number | null,"zone_blessure"?: string | null
+                    "accueil_fait_le"?: string | null,"age"?: number | null,"aliments_exclus"?: (string)[],"budget_courses_eur"?: number | null,"coach"?: string | null,"contrainte_medicale"?: string | null,"created_at"?: string | null,"id"?: string,"lieux_entrainement"?: (string)[],"niveau"?: string | null,"notif_ajustement"?: boolean,"notif_heure"?: number,"notif_rapport"?: boolean,"notif_seance"?: boolean,"objectif_glucides_g"?: number | null,"objectif_kcal"?: number | null,"objectif_lipides_g"?: number | null,"objectif_proteines_g"?: number | null,"objectifs"?: (string)[],"poids_initial_kg"?: number | null,"regime"?: string | null,"seances_par_semaine"?: number | null,"sexe"?: string | null,"taille_cm"?: number | null,"zone_blessure"?: string | null
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"push_abonnements": {
+                  Row: {
+                    "auth": string,"created_at": string,"endpoint": string,"fuseau": string,"id": string,"p256dh": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "auth": string,"created_at"?: string,"endpoint": string,"fuseau"?: string,"id"?: string,"p256dh": string,"user_id": string
+                  }
+                  Update: {
+                    "auth"?: string,"created_at"?: string,"endpoint"?: string,"fuseau"?: string,"id"?: string,"p256dh"?: string,"user_id"?: string
+                  }
+                  Relationships: [
+                    
+                  ]
+                },"notifications_envoyees": {
+                  Row: {
+                    "date": string,"envoyee_a": string,"type": string,"user_id": string
+                  }
+                  ComputedFields: never
+                  Insert: {
+                    "date": string,"envoyee_a"?: string,"type": string,"user_id": string
+                  }
+                  Update: {
+                    "date"?: string,"envoyee_a"?: string,"type"?: string,"user_id"?: string
                   }
                   Relationships: [
                     
@@ -423,7 +451,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "annuler_changement":
+            "abonner_appareil":
+{ Args: { "p_auth": string,"p_endpoint": string,"p_fuseau": string,"p_p256dh": string }; Returns: undefined
+                           },
+"annuler_changement":
 { Args: { "p_groupe": string }; Returns: number
                            },
 "appliquer_changements":

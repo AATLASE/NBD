@@ -50,6 +50,45 @@ self.addEventListener("message", (evenement) => {
   }
 })
 
+// Notifications du coach (lib/notifications) : le serveur envoie titre, texte, icône et écran à ouvrir.
+self.addEventListener("push", (evenement) => {
+  let message = {}
+  try {
+    message = evenement.data ? evenement.data.json() : {}
+  } catch {
+    message = { corps: evenement.data ? evenement.data.text() : "" }
+  }
+  evenement.waitUntil(
+    self.registration.showNotification(message.titre || "NBD", {
+      body: message.corps || "",
+      icon: message.icone || "/icons/icone-192.png",
+      badge: "/icons/icone-192.png",
+      tag: message.tag,
+      lang: "fr",
+      data: { url: message.url || "/sport" },
+    })
+  )
+})
+
+// Toucher la notification ramène l'application au premier plan, sur l'écran concerné.
+self.addEventListener("notificationclick", (evenement) => {
+  evenement.notification.close()
+  const cible = new URL(evenement.notification.data?.url || "/sport", self.location.origin)
+  if (cible.origin !== self.location.origin) return
+  evenement.waitUntil(
+    (async () => {
+      const fenetres = await self.clients.matchAll({ type: "window", includeUncontrolled: true })
+      const ouverte = fenetres.find((f) => new URL(f.url).origin === self.location.origin)
+      if (ouverte) {
+        await ouverte.focus()
+        if ("navigate" in ouverte) await ouverte.navigate(cible.href).catch(() => undefined)
+        return
+      }
+      await self.clients.openWindow(cible.href)
+    })()
+  )
+})
+
 async function fichier(requete) {
   const cache = await caches.open(FICHIERS)
   const garde = await cache.match(requete, { ignoreVary: true })
